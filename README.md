@@ -83,4 +83,4 @@ cmake --build build --target compute
 - Read [compute-framework/README.md](/Users/umairansari/projects/gpu-compute-framework/compute-framework/README.md) for native benchmark behavior.
 - Read [frontend/README.md](/Users/umairansari/projects/gpu-compute-framework/frontend/README.md) for UI and JSON-RPC usage.
 - Read [infrastructure/README.md](/Users/umairansari/projects/gpu-compute-framework/infrastructure/README.md) for AWS orchestration and AMI strategy.
-- Read [.github/README.md](/Users/umairansari/projects/gpu-compute-framework/.github/README.md) for CI/CD behavior.
+- Read [.github/GITHUB.md](/Users/umairansari/projects/gpu-compute-framework/.github/GITHUB.md) for CI/CD behavior.
