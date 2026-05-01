@@ -312,7 +312,7 @@ function App() {
             </button>
           </div>
           <p className="text-sm text-zinc-600 dark:text-zinc-300">
-            Run CPU and GPU benchmarks, inspect live status, and browse historical performance through the same JSON-RPC API.
+            Binary test runner for comparing CPU (c7i.xlarge) and GPU (g4dn.xlarge) benchmarks.
           </p>
         </header>
 
