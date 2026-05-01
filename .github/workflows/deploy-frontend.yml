@@ -46,22 +46,22 @@ jobs:
           FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
             --stack-name KernelBench-Infrastructure \
             --region "$AWS_REGION" \
-            --query "Stacks[0].Outputs[?OutputKey=='KernelBench-FrontendBucketName'].OutputValue" \
+            --query "Stacks[0].Outputs[?OutputKey=='KernelBenchFrontendBucketName'].OutputValue" \
             --output text)
 
           CF_DOMAIN=$(aws cloudformation describe-stacks \
             --stack-name KernelBench-Infrastructure \
             --region "$AWS_REGION" \
-            --query "Stacks[0].Outputs[?OutputKey=='KernelBench-CloudFrontDomain'].OutputValue" \
+            --query "Stacks[0].Outputs[?OutputKey=='KernelBenchCloudFrontDomain'].OutputValue" \
             --output text)
 
           if [ -z "$FRONTEND_BUCKET" ] || [ "$FRONTEND_BUCKET" = "None" ]; then
-            echo "Could not resolve KernelBench-FrontendBucketName" >&2
+            echo "Could not resolve KernelBenchFrontendBucketName" >&2
             exit 1
           fi
 
           if [ -z "$CF_DOMAIN" ] || [ "$CF_DOMAIN" = "None" ]; then
-            echo "Could not resolve KernelBench-CloudFrontDomain" >&2
+            echo "Could not resolve KernelBenchCloudFrontDomain" >&2
             exit 1
           fi
 

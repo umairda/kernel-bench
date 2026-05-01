@@ -118,22 +118,22 @@ jobs:
           GPU_INSTANCE_ID=$(aws cloudformation describe-stacks \
             --stack-name KernelBench-Infrastructure \
             --region "$AWS_REGION" \
-            --query "Stacks[0].Outputs[?OutputKey=='KernelBench-GpuInstanceId'].OutputValue" \
+            --query "Stacks[0].Outputs[?OutputKey=='KernelBenchGpuInstanceId'].OutputValue" \
             --output text)
 
           RUNNER_PROFILE=$(aws cloudformation describe-stacks \
             --stack-name KernelBench-Infrastructure \
             --region "$AWS_REGION" \
-            --query "Stacks[0].Outputs[?OutputKey=='KernelBench-RunnerInstanceProfileName'].OutputValue" \
+            --query "Stacks[0].Outputs[?OutputKey=='KernelBenchRunnerInstanceProfileName'].OutputValue" \
             --output text)
 
           if [ -z "$GPU_INSTANCE_ID" ] || [ "$GPU_INSTANCE_ID" = "None" ]; then
-            echo "Could not resolve KernelBench-GpuInstanceId" >&2
+            echo "Could not resolve KernelBenchGpuInstanceId" >&2
             exit 1
           fi
 
           if [ -z "$RUNNER_PROFILE" ] || [ "$RUNNER_PROFILE" = "None" ]; then
-            echo "Could not resolve KernelBench-RunnerInstanceProfileName" >&2
+            echo "Could not resolve KernelBenchRunnerInstanceProfileName" >&2
             exit 1
           fi
 
@@ -256,11 +256,11 @@ jobs:
           BUCKET_NAME=$(aws cloudformation describe-stacks \
             --stack-name KernelBench-Infrastructure \
             --region "$AWS_REGION" \
-            --query "Stacks[0].Outputs[?OutputKey=='KernelBench-ArtifactBucketName'].OutputValue" \
+            --query "Stacks[0].Outputs[?OutputKey=='KernelBenchArtifactBucketName'].OutputValue" \
             --output text)
 
           if [ -z "$BUCKET_NAME" ] || [ "$BUCKET_NAME" = "None" ]; then
-            echo "Could not resolve KernelBench-ArtifactBucketName from stack outputs" >&2
+            echo "Could not resolve KernelBenchArtifactBucketName from stack outputs" >&2
             exit 1
           fi
 
