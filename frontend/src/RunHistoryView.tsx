@@ -155,7 +155,7 @@ export default function RunHistoryView() {
                   <button type="button" onClick={() => setSort('parameters')} className="inline-flex items-center gap-1 font-semibold">Parameters {renderSortIcon('parameters')}</button>
                 </th>
                 <th className="px-3 py-3">
-                  <button type="button" onClick={() => setSort('duration')} className="inline-flex items-center gap-1 font-semibold">Operation Duration {renderSortIcon('duration')}</button>
+                  <button type="button" onClick={() => setSort('duration')} className="inline-flex w-full items-center justify-start gap-1 text-left font-semibold">Operation Duration {renderSortIcon('duration')}</button>
                 </th>
                 <th className="px-3 py-3">
                   <button type="button" onClick={() => setSort('result')} className="inline-flex items-center gap-1 font-semibold">Result {renderSortIcon('result')}</button>
