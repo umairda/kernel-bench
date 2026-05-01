@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+PS4='+ [${BASH_SOURCE##*/}:${LINENO}] '
+set -x
+trap 'rc=$?; echo "[ERROR] command failed (rc=${rc}) at line ${LINENO}: ${BASH_COMMAND}" >&2; exit ${rc}' ERR
+
 RUNNER="$1"
 BENCHMARK="$2"
 PARAMS_B64="$3"
@@ -83,8 +87,8 @@ ensure_cmake() {
     fi
   fi
 
-  dnf install -y python3-pip >/dev/null 2>&1 || true
-  python3 -m pip install --upgrade --no-cache-dir cmake >/dev/null 2>&1
+  dnf install -y python3-pip
+  python3 -m pip install --upgrade --no-cache-dir cmake
 }
 
 ensure_cuda_toolkit_for_gpu() {
@@ -96,12 +100,12 @@ ensure_cuda_toolkit_for_gpu() {
     return 0
   fi
 
-  dnf install -y dnf-plugins-core >/dev/null 2>&1 || true
-  dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/amzn2023/x86_64/cuda-amzn2023.repo >/dev/null 2>&1 || true
-  dnf clean all >/dev/null 2>&1 || true
-  dnf makecache >/dev/null 2>&1 || true
+  dnf install -y dnf-plugins-core
+  dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/amzn2023/x86_64/cuda-amzn2023.repo
+  dnf clean all
+  dnf makecache
 
-  dnf install -y cuda-compiler-12-6 cuda-cudart-devel-12-6 cuda-libraries-devel-12-6 >/dev/null 2>&1 || true
+  dnf install -y cuda-compiler-12-6 cuda-cudart-devel-12-6 cuda-libraries-devel-12-6
 
   if [[ -f /usr/local/cuda-12.6/bin/nvcc ]]; then
     ln -sf /usr/local/cuda-12.6/bin/nvcc /usr/local/bin/nvcc || true
