@@ -138,6 +138,7 @@ async function dispatch(input: WorkflowInput) {
     'mkdir -p workspace',
     'tar -xzf source.tar.gz -C workspace',
     'cd workspace',
+    'test -f ./infrastructure/scripts/remote_kernel_benchmark.sh',
     'chmod +x ./infrastructure/scripts/remote_kernel_benchmark.sh',
     `bash ./infrastructure/scripts/remote_kernel_benchmark.sh '${input.runner}' '${input.benchmark}' '${paramsB64}' '${input.runId}' '${ARTIFACT_BUCKET_NAME}' '${input.s3Prefix}' '${launchTimingB64}'`,
   ]
