@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import { GlowCard } from './components/aceternity/glow-card'
 import { type RunHistoryRow, useGetRunHistoryQuery } from './lib/api'
 
-type SortKey = 'runId' | 'createdAt' | 'runner' | 'parameters' | 'result' | 'duration'
+type SortKey = 'runId' | 'createdAt' | 'runner' | 'operation' | 'parameters' | 'result' | 'duration'
 type SortDirection = 'asc' | 'desc'
 
 function formatParams(params: Record<string, number> | undefined) {
@@ -12,6 +12,13 @@ function formatParams(params: Record<string, number> | undefined) {
 
 function resultLabel(status: RunHistoryRow['status']) {
   return status === 'COMPLETED' ? 'Success' : 'Failed'
+}
+
+function operationLabel(benchmark: RunHistoryRow['benchmark']) {
+  if (benchmark === 'matrix-multiplication') {
+    return 'Matrix Multiplication'
+  }
+  return benchmark.charAt(0).toUpperCase() + benchmark.slice(1)
 }
 
 function totalOperationDuration(run: RunHistoryRow) {
@@ -74,6 +81,9 @@ export default function RunHistoryView() {
       if (sortKey === 'runner') {
         return compareValues(left.runner, right.runner, sortDirection)
       }
+      if (sortKey === 'operation') {
+        return compareValues(operationLabel(left.benchmark), operationLabel(right.benchmark), sortDirection)
+      }
       if (sortKey === 'parameters') {
         return compareValues(formatParams(left.params), formatParams(right.params), sortDirection)
       }
@@ -121,10 +131,11 @@ export default function RunHistoryView() {
             <colgroup>
               <col className="w-[16%]" />
               <col className="w-[16%]" />
-              <col className="w-[9%]" />
-              <col className="w-[30%]" />
+              <col className="w-[8%]" />
+              <col className="w-[15%]" />
+              <col className="w-[24%]" />
               <col className="w-[10%]" />
-              <col className="w-[19%]" />
+              <col className="w-[11%]" />
             </colgroup>
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
@@ -138,13 +149,16 @@ export default function RunHistoryView() {
                   <button type="button" onClick={() => setSort('runner')} className="inline-flex items-center gap-1 font-semibold">Runner {renderSortIcon('runner')}</button>
                 </th>
                 <th className="px-3 py-3">
+                  <button type="button" onClick={() => setSort('operation')} className="inline-flex items-center gap-1 font-semibold">Operation {renderSortIcon('operation')}</button>
+                </th>
+                <th className="px-3 py-3">
                   <button type="button" onClick={() => setSort('parameters')} className="inline-flex items-center gap-1 font-semibold">Parameters {renderSortIcon('parameters')}</button>
                 </th>
                 <th className="px-3 py-3">
-                  <button type="button" onClick={() => setSort('result')} className="inline-flex items-center gap-1 font-semibold">Result {renderSortIcon('result')}</button>
+                  <button type="button" onClick={() => setSort('duration')} className="inline-flex items-center gap-1 font-semibold">Operation Duration {renderSortIcon('duration')}</button>
                 </th>
                 <th className="px-3 py-3">
-                  <button type="button" onClick={() => setSort('duration')} className="inline-flex items-center gap-1 font-semibold">Operation Duration {renderSortIcon('duration')}</button>
+                  <button type="button" onClick={() => setSort('result')} className="inline-flex items-center gap-1 font-semibold">Result {renderSortIcon('result')}</button>
                 </th>
               </tr>
             </thead>
@@ -154,13 +168,14 @@ export default function RunHistoryView() {
                   <td className="px-3 py-3 font-mono text-xs text-zinc-800 dark:text-zinc-100">{row.runId}</td>
                   <td className="px-3 py-3 text-xs text-zinc-700 dark:text-zinc-200">{formatCreatedAt(row.createdAt)}</td>
                   <td className="px-3 py-3 uppercase text-zinc-700 dark:text-zinc-200">{row.runner}</td>
+                  <td className="px-3 py-3 text-zinc-700 dark:text-zinc-200">{operationLabel(row.benchmark)}</td>
                   <td className="px-3 py-3 font-mono text-xs text-zinc-600 dark:text-zinc-300 break-words whitespace-normal">{formatParams(row.params)}</td>
+                  <td className="px-3 py-3 text-zinc-700 dark:text-zinc-200">{formatDuration(totalOperationDuration(row))}</td>
                   <td className="px-3 py-3">
                     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-rose-500/10 text-rose-700 dark:text-rose-300'}`}>
                       {resultLabel(row.status)}
                     </span>
                   </td>
-                  <td className="px-3 py-3 text-zinc-700 dark:text-zinc-200">{formatDuration(totalOperationDuration(row))}</td>
                 </tr>
               ))}
             </tbody>
