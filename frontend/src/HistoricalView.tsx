@@ -161,7 +161,6 @@ export default function HistoricalView({
                 domain={['auto', 'auto']}
                 name="Vector Length"
                 tickFormatter={(value) => formatInteger(Number(value))}
-                label={{ value: 'N', position: 'insideBottom', offset: -8 }}
               />
               <YAxis
                 type="number"
@@ -204,7 +203,6 @@ export default function HistoricalView({
                 domain={['auto', 'auto']}
                 name="Matrix Size"
                 tickFormatter={(value) => formatInteger(Number(value))}
-                label={{ value: 'N', position: 'insideBottom', offset: -8 }}
               />
               <YAxis
                 type="number"
@@ -242,7 +240,6 @@ export default function HistoricalView({
                   domain={['auto', 'auto']}
                   name="Input Area"
                   tickFormatter={(value) => formatInteger(Number(value))}
-                  label={{ value: 'N', position: 'insideBottom', offset: -8 }}
                 />
                 <YAxis
                   type="number"

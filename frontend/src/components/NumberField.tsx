@@ -17,7 +17,7 @@ export function NumberField({
   min = 0,
   onChange,
 }: {
-  label: string
+  label: React.ReactNode
   value: number
   min?: number
   onChange: (value: number) => void
