@@ -3,7 +3,7 @@
 #include "framework/gpu_ops.hpp"
 #include "framework/logger.hpp"
 
-#include <format>
+#include <sstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -79,13 +79,13 @@ int main(int argc, char *argv[])
             return 0;
         }
 
-        Logger::instance().error(std::format("Invalid argument: {}", e.what()));
+        Logger::instance().error(std::string("Invalid argument: ") + e.what());
         print_usage(argv[0], std::cerr);
         return 2;
     }
     catch (const std::exception &e)
     {
-        Logger::instance().error(std::format("Error: {}", e.what()));
+        Logger::instance().error(std::string("Error: ") + e.what());
         return 1;
     }
 }

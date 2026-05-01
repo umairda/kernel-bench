@@ -1,9 +1,10 @@
 #include "framework/logger.hpp"
 
 #include <chrono>
-#include <format>
 #include <iostream>
 #include <mutex>
+#include <sstream>
+#include <iomanip>
 
 namespace
 {
@@ -14,7 +15,7 @@ std::string now_timestamp_ms()
     const auto now = std::chrono::system_clock::now();
     const auto ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-    return std::format("{}", ms);
+    return std::to_string(ms);
 }
 } // namespace
 
@@ -106,7 +107,7 @@ std::string to_string(const StatusCode status)
     case StatusCode::BackendUnavailable:
         return "BackendUnavailable";
     default:
-        return std::format("UnknownStatus({})", static_cast<int>(status));
+        return "UnknownStatus(" + std::to_string(static_cast<int>(status)) + ")";
     }
 }
 
@@ -123,7 +124,7 @@ std::string to_string(const Backend backend)
     case Backend::None:
         return "None";
     default:
-        return std::format("UnknownBackend({})", static_cast<int>(backend));
+        return "UnknownBackend(" + std::to_string(static_cast<int>(backend)) + ")";
     }
 }
 
@@ -138,7 +139,7 @@ std::string vector_to_csv(const std::vector<float> &values)
         {
             out += ",";
         }
-        out += std::format("{}", values[i]);
+        out += std::to_string(values[i]);
     }
 
     return out;
@@ -151,7 +152,7 @@ void print_operation_result(
 {
     if (status == StatusCode::Success)
     {
-        out << std::format("Success, out = {}", vector_to_csv(output)) << std::endl;
+        out << "Success, out = " << vector_to_csv(output) << std::endl;
         return;
     }
 
@@ -165,14 +166,14 @@ void print_benchmark_row(
     const std::size_t size,
     const Result &result)
 {
-    out << std::format(
-               "op={} backend={} size={} status={} kernel_ms={:.3f} transfer_ms={:.3f} total_ms={:.3f}",
-               op_name,
-               to_string(backend),
-               size,
-               to_string(result.status),
-               result.kernel_ms,
-               result.transfer_ms,
-               result.total_ms)
-        << std::endl;
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(3)
+        << "op=" << op_name
+        << " backend=" << to_string(backend)
+        << " size=" << size
+        << " status=" << to_string(result.status)
+        << " kernel_ms=" << result.kernel_ms
+        << " transfer_ms=" << result.transfer_ms
+        << " total_ms=" << result.total_ms;
+    out << oss.str() << std::endl;
 }

@@ -1,12 +1,22 @@
 #include "framework/parse_args.hpp"
 
-#include <format>
+#include <fstream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 namespace
 {
+template <typename... Args>
+std::string join_message(Args &&...args)
+{
+    std::ostringstream oss;
+    (oss << ... << std::forward<Args>(args));
+    return oss.str();
+}
+
 std::vector<float> parse_csv_floats(const std::string &csv)
 {
     std::vector<float> out;
@@ -35,6 +45,19 @@ std::vector<float> parse_csv_floats(const std::string &csv)
     return out;
 }
 
+std::vector<float> parse_csv_file(const std::string &path)
+{
+    std::ifstream in(path);
+    if (!in.is_open())
+    {
+        throw std::invalid_argument(join_message("Unable to open file: ", path));
+    }
+
+    std::ostringstream contents;
+    contents << in.rdbuf();
+    return parse_csv_floats(contents.str());
+}
+
 IndexType parse_index(const std::string &s)
 {
     return static_cast<IndexType>(std::stoull(s));
@@ -58,7 +81,7 @@ VectorOperation parse_vector_op(const std::string &name)
     {
         return VectorOperation::Divide;
     }
-    throw std::invalid_argument(std::format("Unsupported vector operation: {}", name));
+    throw std::invalid_argument(join_message("Unsupported vector operation: ", name));
 }
 
 Backend parse_backend(const std::string &name)
@@ -71,7 +94,7 @@ Backend parse_backend(const std::string &name)
     {
         return Backend::GPU;
     }
-    throw std::invalid_argument(std::format("Unsupported backend: {}", name));
+    throw std::invalid_argument(join_message("Unsupported backend: ", name));
 }
 
 const std::string &required_flag(
@@ -81,20 +104,72 @@ const std::string &required_flag(
     const auto it = flags.find(name);
     if (it == flags.end())
     {
-        throw std::invalid_argument(std::format("Missing required flag: {}", name));
+        throw std::invalid_argument(join_message("Missing required flag: ", name));
     }
     return it->second;
+}
+
+std::vector<float> parse_data_values(
+    const std::unordered_map<std::string, std::string> &flags,
+    const std::string &inline_flag,
+    const std::string &file_flag)
+{
+    const auto inline_it = flags.find(inline_flag);
+    const auto file_it = flags.find(file_flag);
+    const bool has_inline = inline_it != flags.end();
+    const bool has_file = file_it != flags.end();
+
+    if (has_inline == has_file)
+    {
+        throw std::invalid_argument(
+            join_message("Specify exactly one of ", inline_flag, " or ", file_flag));
+    }
+
+    if (has_inline)
+    {
+        return parse_csv_floats(inline_it->second);
+    }
+
+    return parse_csv_file(file_it->second);
+}
+
+bool has_any_flag(
+    const std::unordered_map<std::string, std::string> &flags,
+    const std::string &a,
+    const std::string &b)
+{
+    return (flags.find(a) != flags.end()) || (flags.find(b) != flags.end());
+}
+
+std::vector<float> generate_sequence(IndexType count, float start, float step = 1.0f)
+{
+    std::vector<float> out(count);
+    for (IndexType i = 0; i < count; ++i)
+    {
+        out[i] = start + static_cast<float>(i) * step;
+    }
+    return out;
+}
+
+std::vector<float> generate_modulated(IndexType count, IndexType mod_base)
+{
+    std::vector<float> out(count);
+    for (IndexType i = 0; i < count; ++i)
+    {
+        out[i] = static_cast<float>((i % mod_base) + 1);
+    }
+    return out;
 }
 } // namespace
 
 void print_usage(const char *program, std::ostream &out)
 {
     out << "Usage:\n";
-    out << "  " << program << " --op vector --backend <cpu|gpu> --vector-op <add|subtract|multiply|divide> --a <csv> --b <csv>\n";
-    out << "  " << program << " --op matmul --backend <cpu|gpu> --a-rows <n> --a-cols <n> --b-rows <n> --b-cols <n> --a <csv> --b <csv>\n";
-    out << "  " << program << " --op convolution --backend <cpu|gpu> --n <n> --c-in <n> --h-in <n> --w-in <n> --c-out <n> --k-h <n> --k-w <n> --stride-h <n> --stride-w <n> --pad-h <n> --pad-w <n> --input <csv> --filter <csv>\n";
+    out << "  " << program << " --op vector --backend <cpu|gpu> --vector-op <add|subtract|multiply|divide> [--length <n>] [--a <csv>|--a-file <path>] [--b <csv>|--b-file <path>]\n";
+    out << "  " << program << " --op matmul --backend <cpu|gpu> --a-rows <n> --a-cols <n> --b-rows <n> --b-cols <n> [--a <csv>|--a-file <path>] [--b <csv>|--b-file <path>]\n";
+    out << "  " << program << " --op convolution --backend <cpu|gpu> --n <n> --c-in <n> --h-in <n> --w-in <n> --c-out <n> --k-h <n> --k-w <n> --stride-h <n> --stride-w <n> --pad-h <n> --pad-w <n> [--input <csv>|--input-file <path>] [--filter <csv>|--filter-file <path>]\n";
     out << "Examples:\n";
-    out << "  " << program << " --op vector --backend cpu --vector-op add --a \"1,2,3\" --b \"4,5,6\"\n";
+    out << "  " << program << " --op vector --backend cpu --vector-op add --length 1000000\n";
     out << "  " << program << " --op matmul --backend gpu --a-rows 2 --a-cols 3 --b-rows 3 --b-cols 2 --a \"1,2,3,4,5,6\" --b \"7,8,9,10,11,12\"\n";
     out << "  " << program << " --op convolution --backend cpu --n 1 --c-in 1 --h-in 3 --w-in 3 --c-out 1 --k-h 3 --k-w 3 --stride-h 1 --stride-w 1 --pad-h 0 --pad-w 0 --input \"1,2,3,4,5,6,7,8,9\" --filter \"1,1,1,1,1,1,1,1,1\"\n";
 }
@@ -116,11 +191,11 @@ ParsedArgs parse_args(int argc, char *argv[])
         }
         if (!token.starts_with("--"))
         {
-            throw std::invalid_argument(std::format("Unexpected positional argument: {}", token));
+            throw std::invalid_argument(join_message("Unexpected positional argument: ", token));
         }
         if (i + 1 >= argc)
         {
-            throw std::invalid_argument(std::format("Flag {} requires a value", token));
+            throw std::invalid_argument(join_message("Flag ", token, " requires a value"));
         }
         flags[token] = argv[++i];
     }
@@ -132,13 +207,34 @@ ParsedArgs parse_args(int argc, char *argv[])
     if (op == "vector")
     {
         parsed.operation = CliOperation::Vector;
-        parsed.a = parse_csv_floats(required_flag(flags, "--a"));
-        parsed.b = parse_csv_floats(required_flag(flags, "--b"));
-
-        if (parsed.a.size() != parsed.b.size())
+        const bool has_a = has_any_flag(flags, "--a", "--a-file");
+        const bool has_b = has_any_flag(flags, "--b", "--b-file");
+        const bool has_length = flags.find("--length") != flags.end();
+        if ((has_a || has_b) && has_length)
         {
-            throw std::invalid_argument(std::format(
-                "Vector lengths differ: a={} b={}", parsed.a.size(), parsed.b.size()));
+            throw std::invalid_argument(
+                "Specify either generated vector length (--length) or explicit inputs (--a/--a-file and --b/--b-file), not both");
+        }
+
+        if (has_a || has_b)
+        {
+            parsed.a = parse_data_values(flags, "--a", "--a-file");
+            parsed.b = parse_data_values(flags, "--b", "--b-file");
+            if (parsed.a.size() != parsed.b.size())
+            {
+                throw std::invalid_argument(
+                    join_message("Vector lengths differ: a=", parsed.a.size(), " b=", parsed.b.size()));
+            }
+        }
+        else
+        {
+            const IndexType length = has_length ? parse_index(required_flag(flags, "--length")) : 0;
+            if (length == 0)
+            {
+                throw std::invalid_argument("Vector operation requires either --length or explicit --a/--b inputs");
+            }
+            parsed.a = generate_sequence(length, 1.0f);
+            parsed.b = generate_sequence(length, 2.0f);
         }
 
         parsed.vector_params = VectorOpParams{
@@ -162,8 +258,18 @@ ParsedArgs parse_args(int argc, char *argv[])
             .output_shape = MatrixShape{a_rows, b_cols},
         };
 
-        parsed.a = parse_csv_floats(required_flag(flags, "--a"));
-        parsed.b = parse_csv_floats(required_flag(flags, "--b"));
+        const bool has_a = has_any_flag(flags, "--a", "--a-file");
+        const bool has_b = has_any_flag(flags, "--b", "--b-file");
+        if (has_a || has_b)
+        {
+            parsed.a = parse_data_values(flags, "--a", "--a-file");
+            parsed.b = parse_data_values(flags, "--b", "--b-file");
+        }
+        else
+        {
+            parsed.a = generate_sequence(a_rows * a_cols, 1.0f);
+            parsed.b = generate_sequence(b_rows * b_cols, 1.0f);
+        }
         return parsed;
     }
 
@@ -206,10 +312,20 @@ ParsedArgs parse_args(int argc, char *argv[])
             .padding_height = pad_h,
             .padding_width = pad_w,
         };
-        parsed.input = parse_csv_floats(required_flag(flags, "--input"));
-        parsed.filter = parse_csv_floats(required_flag(flags, "--filter"));
+        const bool has_input = has_any_flag(flags, "--input", "--input-file");
+        const bool has_filter = has_any_flag(flags, "--filter", "--filter-file");
+        if (has_input || has_filter)
+        {
+            parsed.input = parse_data_values(flags, "--input", "--input-file");
+            parsed.filter = parse_data_values(flags, "--filter", "--filter-file");
+        }
+        else
+        {
+            parsed.input = generate_modulated(n * c_in * h_in * w_in, 11);
+            parsed.filter = generate_modulated(c_out * c_in * k_h * k_w, 7);
+        }
         return parsed;
     }
 
-    throw std::invalid_argument(std::format("Unsupported --op value: {}", op));
+    throw std::invalid_argument(join_message("Unsupported --op value: ", op));
 }

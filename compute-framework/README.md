@@ -1,57 +1,80 @@
-# KernelBench
+# Compute Framework
 
-`KernelBench` is a C++ compute framework for comparing CPU and GPU implementations of:
+This directory contains the native benchmark engine that KernelBench runs on CPU and GPU hosts.
 
-- Vector operations
-- Matrix multiplication
-- 2D convolution (NCHW)
+## Purpose
 
-It includes:
+The `compute-framework` executable is the lowest-level benchmark surface in the repo. It is responsible for:
 
-- CPU and GPU backends
-- Runtime backend selection + dispatch
-- CLI runner
-- Benchmark runner with CSV-style output
-- Unit tests (GoogleTest)
+- parsing CLI benchmark requests
+- dispatching work to CPU or CUDA implementations
+- printing machine-readable benchmark output
+- serving as the binary executed by remote benchmark runners
 
-## Current Status
+The frontend and JSON-RPC control plane never execute kernels directly. They always flow through this binary.
 
-Implemented:
+## Architecture Decisions
 
-- CPU vector ops: add, subtract, multiply, divide
-- GPU vector ops
-- CPU matrix multiply
-- GPU matrix multiply
-- CPU convolution
-- GPU convolution
-- Runtime capability probing + backend selection
-- CLI parsing with flags
-- Benchmark runner for vector + matmul + convolution
+- One CLI binary: the project exposes a single `compute` executable rather than separate binaries per benchmark. That keeps local use, remote orchestration, and prebuilt artifact handling simpler.
+- Runtime backend selection: the CLI accepts an explicit `--backend cpu|gpu` choice so the orchestration layer can compare CPU and GPU deterministically.
+- Graceful non-CUDA builds: GPU entrypoints fall back to stub implementations on hosts that are built without CUDA support.
+- Small benchmark contract: the AWS runner invokes the binary with generated arguments instead of handing it opaque config files. That keeps the runtime boundary simple and debuggable.
 
-Notes:
+## Layout
 
-- On non-CUDA builds, GPU calls return `NotImplemented` via `src/gpu/gpu_ops_stub.cpp`.
-- On Apple Silicon/macOS, CUDA builds are blocked in CMake.
-
-## Project Structure
-
-- `include/framework/` public headers (`types`, `ops`, `runtime`, `parse_args`, etc.)
-- `src/cpu/` CPU implementations
-- `src/gpu/` CUDA implementations + non-CUDA stubs
-- `src/runtime/` backend probe/selection/dispatch
-- `src/common/` logger/timer utilities
-- `src/main.cpp` CLI entrypoint
-- `benchmarks/benchmark_main.cpp` benchmark runner
-- `tests/` GoogleTest test suite
+- `include/framework/`
+  Public headers for types, runtime dispatch, CLI parsing, and benchmark contracts.
+- `src/cpu/`
+  CPU implementations for vector, matrix multiplication, and convolution.
+- `src/gpu/`
+  CUDA implementations plus non-CUDA stub fallbacks.
+- `src/runtime/`
+  Backend dispatch and capability probing.
+- `src/common/`
+  Shared logging and timing utilities.
+- `src/cli/`
+  Argument parsing helpers.
+- `src/main.cpp`
+  CLI entrypoint for the `compute` executable.
+- `benchmarks/`
+  Benchmark runner entrypoint(s).
+- `tests/`
+  GoogleTest coverage for parsing, dispatch, and compute behavior.
+- `scripts/`
+  Local helper scripts. These are currently placeholders rather than production automation.
 
 ## Build
 
+From this directory:
+
 ```bash
 cmake -S . -B build
-cmake --build build
+cmake --build build --target compute
 ```
 
-## Run Unit Tests
+From the repo root, the remote runner usually builds it like:
+
+```bash
+cmake -S compute-framework -B compute-framework/build
+cmake --build compute-framework/build --target compute
+```
+
+## CUDA Build
+
+On a CUDA-capable Linux host:
+
+```bash
+cmake -S . -B build -DENABLE_CUDA=ON
+cmake --build build --target compute
+```
+
+Optional architecture override:
+
+```bash
+cmake -S . -B build -DENABLE_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89"
+```
+
+## Test
 
 ```bash
 ctest --test-dir build --output-on-failure
@@ -59,102 +82,47 @@ ctest --test-dir build --output-on-failure
 
 ## CLI Usage
 
+Show help:
+
 ```bash
 ./build/compute --help
 ```
 
-### Vector
+Vector example:
 
 ```bash
 ./build/compute --op vector --backend cpu --vector-op add --a "1,2,3" --b "4,5,6"
 ```
 
-Sample output:
-
-```text
-Success, out = 5,7,9
-```
-
-### Matmul
+Matrix multiplication example:
 
 ```bash
 ./build/compute --op matmul --backend cpu --a-rows 2 --a-cols 3 --b-rows 3 --b-cols 2 --a "1,2,3,4,5,6" --b "7,8,9,10,11,12"
 ```
 
-Sample output:
-
-```text
-Success, out = 58,64,139,154
-```
-
-### Convolution
+Convolution example:
 
 ```bash
 ./build/compute --op convolution --backend cpu --n 1 --c-in 1 --h-in 3 --w-in 3 --c-out 1 --k-h 3 --k-w 3 --stride-h 1 --stride-w 1 --pad-h 0 --pad-w 0 --input "1,2,3,4,5,6,7,8,9" --filter "1,1,1,1,1,1,1,1,1"
 ```
 
-Sample output:
+If the binary was built without CUDA support, a GPU call returns `NotImplemented`.
 
-```text
-Success, out = 45
-```
+## Scripts
 
-### GPU call on non-CUDA build
+- `scripts/run_benchmarks.sh`
+  Placeholder for a future local benchmark sweep script.
+- `scripts/profile_gpu.sh`
+  Placeholder for future GPU profiling automation.
 
-```bash
-./build/compute --op vector --backend gpu --vector-op add --a "1,2,3" --b "4,5,6"
-```
+These scripts are documented so contributors do not assume they are production-ready yet.
 
-Sample output:
+## Relationship To Infrastructure
 
-```text
-NotImplemented
-```
+This directory is bundled and uploaded by [upload-source.sh](/Users/umairansari/projects/gpu-compute-framework/infrastructure/scripts/upload-source.sh). Remote runners then do one of three things:
 
-## Benchmark Runner
+- use an embedded prebuilt `compute` binary
+- reuse a cached build keyed by the bundle `sourceHash`
+- build `compute` on-instance if no cache or prebuilt binary exists
 
-Build target:
-
-```bash
-cmake --build build --target benchmark_runner
-```
-
-Run:
-
-```bash
-./build/benchmark_runner
-```
-
-Sample output (first lines):
-
-```text
-op,backend,case_size,run_index,status,kernel_ms,transfer_ms,total_ms
-summary_prefix,op,backend,case_size,status,success_count,mean_ms,p50_ms,p95_ms,min_ms,max_ms,throughput_items_per_s
-vector_add,cpu,1024,0,Success,0.013000,0.000000,0.013000
-vector_add,cpu,1024,1,Success,0.013000,0.000000,0.013000
-```
-
-## CUDA Build (Non-Apple NVIDIA Host)
-
-```bash
-cmake -S . -B build -DENABLE_CUDA=ON
-cmake --build build
-```
-
-Optional architectures:
-
-```bash
-cmake -S . -B build -DENABLE_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89"
-```
-
-## Useful Targets
-
-- `compute` -> CLI executable
-- `benchmark_runner` -> benchmark executable
-- `vector_ops_tests`
-- `dispatcher_tests`
-- `matmul_cpu_tests`
-- `convolution_cpu_tests`
-- `gpu_ops_tests`
-- `parse_args_tests`
-- `benchmark_tests`
+That design keeps most C++ changes out of the AMI lifecycle.

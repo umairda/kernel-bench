@@ -1,0 +1,16 @@
+# Build outputs
+build/
+compute-framework/build/
+
+# CMake artifacts
+**/CMakeFiles/
+**/CMakeCache.txt
+**/cmake_install.cmake
+**/compile_commands.json
+**/Makefile
+
+# Test output
+**/Testing/
+
+# IDE/editor metadata
+.vscode/

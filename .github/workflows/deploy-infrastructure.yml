@@ -1,0 +1,270 @@
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infrastructure/**'
+      - 'compute-framework/**'
+      - '.github/workflows/deploy-infrastructure.yml'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: kernelbench-infra-deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  GPU_AMI_SSM_PARAMETER_NAME: ${{ vars.KERNELBENCH_GPU_AMI_SSM_PARAMETER_NAME || '/kernelbench/gpu/latest-ami-id' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect GPU AMI-affecting changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            gpu_ami:
+              - 'infrastructure/lib/gpu-benchmark-stack.ts'
+              - 'infrastructure/bin/gpu-compute-infra.ts'
+              - 'infrastructure/scripts/prepare_gpu_ami.sh'
+              - 'infrastructure/scripts/remote_kernel_benchmark.sh'
+              - 'compute-framework/CMakeLists.txt'
+              - '.github/workflows/deploy-infrastructure.yml'
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: infrastructure/package-lock.json
+
+      - name: Install infrastructure deps
+        working-directory: infrastructure
+        run: npm ci
+
+      - name: Build infrastructure
+        working-directory: infrastructure
+        run: npm run build
+
+      - name: Check whether infrastructure stack exists
+        id: stack
+        run: |
+          if aws cloudformation describe-stacks \
+            --stack-name KernelBench-Infrastructure \
+            --region "$AWS_REGION" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bake and publish latest GPU AMI
+        if: steps.changes.outputs.gpu_ami == 'true' && steps.stack.outputs.exists == 'true'
+        run: |
+          set -euo pipefail
+
+          wait_for_ssm_online() {
+            for attempt in $(seq 1 60); do
+              INSTANCE_PING_STATUS=$(aws ssm describe-instance-information \
+                --region "$AWS_REGION" \
+                --filters "Key=InstanceIds,Values=$AMI_BUILDER_INSTANCE_ID" \
+                --query 'InstanceInformationList[0].PingStatus' \
+                --output text 2>/dev/null || true)
+
+              if [ "$INSTANCE_PING_STATUS" = "Online" ]; then
+                return 0
+              fi
+
+              if [ "$attempt" -eq 60 ]; then
+                echo "Timed out waiting for SSM on AMI builder instance $AMI_BUILDER_INSTANCE_ID" >&2
+                return 1
+              fi
+
+              sleep 20
+            done
+          }
+
+          validate_gpu_image() {
+            VALIDATION_COMMAND_ID=$(aws ssm send-command \
+              --instance-ids "$AMI_BUILDER_INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Validate KernelBench GPU AMI" \
+              --region "$AWS_REGION" \
+              --parameters commands='["set -euxo pipefail","test -f /opt/kernel-bench/image-prepared","command -v nvidia-smi","nvidia-smi","command -v nvcc","nvcc --version","cmake --version"]' \
+              --query 'Command.CommandId' \
+              --output text)
+
+            aws ssm wait command-executed \
+              --command-id "$VALIDATION_COMMAND_ID" \
+              --instance-id "$AMI_BUILDER_INSTANCE_ID" \
+              --region "$AWS_REGION"
+          }
+
+          GPU_INSTANCE_ID=$(aws cloudformation describe-stacks \
+            --stack-name KernelBench-Infrastructure \
+            --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='KernelBench-GpuInstanceId'].OutputValue" \
+            --output text)
+
+          RUNNER_PROFILE=$(aws cloudformation describe-stacks \
+            --stack-name KernelBench-Infrastructure \
+            --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='KernelBench-RunnerInstanceProfileName'].OutputValue" \
+            --output text)
+
+          if [ -z "$GPU_INSTANCE_ID" ] || [ "$GPU_INSTANCE_ID" = "None" ]; then
+            echo "Could not resolve KernelBench-GpuInstanceId" >&2
+            exit 1
+          fi
+
+          if [ -z "$RUNNER_PROFILE" ] || [ "$RUNNER_PROFILE" = "None" ]; then
+            echo "Could not resolve KernelBench-RunnerInstanceProfileName" >&2
+            exit 1
+          fi
+
+          SUBNET_ID=$(aws ec2 describe-instances \
+            --instance-ids "$GPU_INSTANCE_ID" \
+            --region "$AWS_REGION" \
+            --query "Reservations[0].Instances[0].SubnetId" \
+            --output text)
+
+          SECURITY_GROUP_ID=$(aws ec2 describe-instances \
+            --instance-ids "$GPU_INSTANCE_ID" \
+            --region "$AWS_REGION" \
+            --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
+            --output text)
+
+          BASE_AMI_ID=$(aws ssm get-parameter \
+            --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64 \
+            --region "$AWS_REGION" \
+            --query 'Parameter.Value' \
+            --output text)
+
+          if [ -z "$SUBNET_ID" ] || [ "$SUBNET_ID" = "None" ] || [ -z "$SECURITY_GROUP_ID" ] || [ "$SECURITY_GROUP_ID" = "None" ]; then
+            echo "Could not resolve subnet/security group for GPU runner" >&2
+            exit 1
+          fi
+
+          AMI_BUILDER_INSTANCE_ID=""
+          cleanup() {
+            if [ -n "$AMI_BUILDER_INSTANCE_ID" ]; then
+              aws ec2 terminate-instances \
+                --instance-ids "$AMI_BUILDER_INSTANCE_ID" \
+                --region "$AWS_REGION" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT
+
+          AMI_BUILDER_INSTANCE_ID=$(aws ec2 run-instances \
+            --image-id "$BASE_AMI_ID" \
+            --instance-type "${{ vars.KERNELBENCH_GPU_AMI_BUILDER_INSTANCE_TYPE || 'g4dn.xlarge' }}" \
+            --iam-instance-profile Name="$RUNNER_PROFILE" \
+            --subnet-id "$SUBNET_ID" \
+            --security-group-ids "$SECURITY_GROUP_ID" \
+            --user-data file://infrastructure/scripts/prepare_gpu_ami.sh \
+            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=KernelBench-gpu-ami-builder},{Key=Project,Value=KernelBench},{Key=Role,Value=ami-builder}]" \
+            --region "$AWS_REGION" \
+            --query 'Instances[0].InstanceId' \
+            --output text)
+
+          aws ec2 wait instance-running --instance-ids "$AMI_BUILDER_INSTANCE_ID" --region "$AWS_REGION"
+          aws ec2 wait instance-status-ok --instance-ids "$AMI_BUILDER_INSTANCE_ID" --region "$AWS_REGION"
+          wait_for_ssm_online
+
+          if ! validate_gpu_image; then
+            REBOOT_COMMAND_ID=$(aws ssm send-command \
+              --instance-ids "$AMI_BUILDER_INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Reboot KernelBench GPU AMI builder" \
+              --region "$AWS_REGION" \
+              --parameters commands='["sudo reboot"]' \
+              --query 'Command.CommandId' \
+              --output text)
+
+            aws ssm wait command-executed \
+              --command-id "$REBOOT_COMMAND_ID" \
+              --instance-id "$AMI_BUILDER_INSTANCE_ID" \
+              --region "$AWS_REGION" || true
+
+            aws ec2 wait instance-status-ok --instance-ids "$AMI_BUILDER_INSTANCE_ID" --region "$AWS_REGION"
+            wait_for_ssm_online
+            validate_gpu_image
+          fi
+
+          AMI_NAME="kernelbench-gpu-$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::12}"
+          AMI_ID=$(aws ec2 create-image \
+            --instance-id "$AMI_BUILDER_INSTANCE_ID" \
+            --name "$AMI_NAME" \
+            --description "KernelBench GPU runner image built from ${GITHUB_SHA}" \
+            --tag-specifications "ResourceType=image,Tags=[{Key=Name,Value=$AMI_NAME},{Key=Project,Value=KernelBench},{Key=GitSha,Value=${GITHUB_SHA}}]" \
+            --region "$AWS_REGION" \
+            --query 'ImageId' \
+            --output text)
+
+          aws ec2 wait image-available --image-ids "$AMI_ID" --region "$AWS_REGION"
+
+          aws ssm put-parameter \
+            --name "$GPU_AMI_SSM_PARAMETER_NAME" \
+            --value "$AMI_ID" \
+            --type String \
+            --overwrite \
+            --region "$AWS_REGION" >/dev/null
+
+          echo "Published GPU AMI $AMI_ID to $GPU_AMI_SSM_PARAMETER_NAME"
+
+      - name: Resolve latest GPU AMI from SSM
+        id: gpu_ami
+        run: |
+          GPU_AMI_ID=$(aws ssm get-parameter \
+            --name "$GPU_AMI_SSM_PARAMETER_NAME" \
+            --region "$AWS_REGION" \
+            --query 'Parameter.Value' \
+            --output text 2>/dev/null || true)
+
+          if [ -n "$GPU_AMI_ID" ] && [ "$GPU_AMI_ID" != "None" ]; then
+            echo "gpu_ami_id=$GPU_AMI_ID" >> "$GITHUB_OUTPUT"
+            echo "KERNELBENCH_GPU_AMI_ID=$GPU_AMI_ID" >> "$GITHUB_ENV"
+          fi
+
+      - name: Deploy CDK stack
+        working-directory: infrastructure
+        run: |
+          npx cdk deploy \
+            --require-approval never \
+            --parameters KernelBenchOriginVerifySecret=${{ secrets.KERNELBENCH_ORIGIN_VERIFY_SECRET || 'KernelBench-ChangeMe' }} \
+            --parameters KernelBenchGitHubRepo=${{ vars.KERNELBENCH_GITHUB_REPO || 'owner/repo' }} \
+            --parameters KernelBenchGitHubBranch=${{ vars.KERNELBENCH_GITHUB_BRANCH || 'main' }}
+
+      - name: Resolve artifact bucket output
+        id: outputs
+        run: |
+          BUCKET_NAME=$(aws cloudformation describe-stacks \
+            --stack-name KernelBench-Infrastructure \
+            --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='KernelBench-ArtifactBucketName'].OutputValue" \
+            --output text)
+
+          if [ -z "$BUCKET_NAME" ] || [ "$BUCKET_NAME" = "None" ]; then
+            echo "Could not resolve KernelBench-ArtifactBucketName from stack outputs" >&2
+            exit 1
+          fi
+
+          echo "artifact_bucket=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Upload latest source archive
+        run: ./infrastructure/scripts/upload-source.sh "${{ steps.outputs.outputs.artifact_bucket }}"

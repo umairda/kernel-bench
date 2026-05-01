@@ -9,6 +9,7 @@ if(ENABLE_CUDA)
   endif()
 
   enable_language(CUDA)
+  find_package(CUDAToolkit REQUIRED)
 
   set(CMAKE_CUDA_STANDARD 17)
   set(CMAKE_CUDA_STANDARD_REQUIRED ON)
@@ -24,6 +25,7 @@ if(ENABLE_CUDA)
 
   message(STATUS "CUDA architectures: ${CMAKE_CUDA_ARCHITECTURES}")
   add_compile_definitions(GPU_FRAMEWORK_ENABLE_CUDA=1)
+  include_directories(${CUDAToolkit_INCLUDE_DIRS})
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
@@ -98,6 +100,33 @@ add_executable(matmul_cpu_tests
   src/cpu/matmul_cpu.cpp
 )
 
+add_executable(matmul_tests
+  tests/test_matmul.cpp
+  src/runtime/dispatcher.cpp
+  src/common/timer.cpp
+  src/cpu/vector_ops_cpu.cpp
+  src/cpu/matmul_cpu.cpp
+  src/cpu/convolution_cpu.cpp
+  ${VECTOR_OPS_GPU_SOURCE}
+)
+
+add_executable(runtime_tests
+  tests/test_runtime.cpp
+  src/runtime/dispatcher.cpp
+  src/common/timer.cpp
+  src/cpu/vector_ops_cpu.cpp
+  src/cpu/matmul_cpu.cpp
+  src/cpu/convolution_cpu.cpp
+  ${VECTOR_OPS_GPU_SOURCE}
+)
+
+add_executable(common_tests
+  tests/test_logger.cpp
+  tests/test_timer.cpp
+  src/common/logger.cpp
+  src/common/timer.cpp
+)
+
 add_executable(gpu_ops_tests
   tests/test_vector_ops_gpu.cpp
   tests/test_matmul_gpu.cpp
@@ -151,6 +180,12 @@ target_include_directories(convolution_cpu_tests PRIVATE ${CMAKE_SOURCE_DIR}/inc
 target_link_libraries(convolution_cpu_tests PRIVATE GTest::gtest_main)
 target_include_directories(matmul_cpu_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(matmul_cpu_tests PRIVATE GTest::gtest_main)
+target_include_directories(matmul_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(matmul_tests PRIVATE GTest::gtest_main)
+target_include_directories(runtime_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(runtime_tests PRIVATE GTest::gtest_main)
+target_include_directories(common_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(common_tests PRIVATE GTest::gtest_main)
 target_include_directories(gpu_ops_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(gpu_ops_tests PRIVATE GTest::gtest_main)
 target_include_directories(parse_args_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
@@ -164,6 +199,9 @@ gtest_discover_tests(vector_ops_tests)
 gtest_discover_tests(dispatcher_tests)
 gtest_discover_tests(convolution_cpu_tests)
 gtest_discover_tests(matmul_cpu_tests)
+gtest_discover_tests(matmul_tests)
+gtest_discover_tests(runtime_tests)
+gtest_discover_tests(common_tests)
 gtest_discover_tests(gpu_ops_tests)
 gtest_discover_tests(parse_args_tests)
 gtest_discover_tests(benchmark_tests)
