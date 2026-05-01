@@ -17,6 +17,7 @@ import {
   stopInstance,
   emitTerminalMetrics,
   getState,
+  reconcileWorkflowTerminal,
   ssm,
 } from './shared'
 
@@ -31,6 +32,15 @@ export async function rpcRunStatus(rawParams: unknown) {
   if (TERMINAL_STATUSES.has(item.status)) {
     await releaseRunnerLock(item.runner, runId)
     item = await attachPerformance(item)
+    return publicRunView(item)
+  }
+
+  const workflowTerminal = await reconcileWorkflowTerminal(item)
+  if (workflowTerminal) {
+    item = workflowTerminal
+    if (TERMINAL_STATUSES.has(item.status)) {
+      item = await attachPerformance(item)
+    }
     return publicRunView(item)
   }
 

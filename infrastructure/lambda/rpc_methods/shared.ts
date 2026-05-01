@@ -125,6 +125,56 @@ async function cancelInFlightWorkForRun(runId: string) {
   } catch {}
 }
 
+async function getWorkflowExecutionStatus(runId: string): Promise<string | undefined> {
+  const executionArn = executionArnForRun(runId)
+  if (!executionArn) return undefined
+  try {
+    const exec = await sfn.send(new DescribeExecutionCommand({ executionArn }))
+    return exec.status
+  } catch {
+    return undefined
+  }
+}
+
+export async function reconcileWorkflowTerminal(item: Record<string, any>): Promise<Record<string, any> | undefined> {
+  const status = await getWorkflowExecutionStatus(String(item.runId))
+  if (!status) return undefined
+
+  let mapped: 'FAILED' | 'CANCELLED' | undefined
+  let reason: string | undefined
+  if (status === 'TIMED_OUT') {
+    mapped = 'FAILED'
+    reason = 'Workflow execution timed out'
+  } else if (status === 'FAILED') {
+    mapped = 'FAILED'
+    reason = 'Workflow execution failed'
+  } else if (status === 'ABORTED') {
+    mapped = 'CANCELLED'
+    reason = 'Workflow execution was aborted'
+  }
+
+  if (!mapped) return undefined
+
+  const now = nowIso()
+  await ddb.send(new UpdateCommand({
+    TableName: RUNS_TABLE_NAME,
+    Key: { runId: item.runId },
+    UpdateExpression: 'SET #status = :status, #error = :error, updatedAt = :updatedAt, completedAt = :completedAt',
+    ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
+    ExpressionAttributeValues: {
+      ':status': mapped,
+      ':error': reason,
+      ':updatedAt': now,
+      ':completedAt': now,
+    },
+  }))
+  await stopInstance(item.instanceId)
+  await releaseRunnerLock(item.runner, item.runId)
+  await emitTerminalMetrics(item, mapped)
+  const latest = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId: item.runId } }))
+  return (latest.Item as Record<string, any>) ?? item
+}
+
 export async function stopInstance(instanceId?: string) {
   if (!instanceId) return
   try {
@@ -198,6 +248,9 @@ export async function emitTerminalMetrics(item: Record<string, any>, mapped: str
 
 export async function reconcileRunningItem(item: Record<string, any>): Promise<Record<string, any>> {
   if (!['STARTING', 'RUNNING'].includes(item.status)) return item
+
+  const workflowTerminal = await reconcileWorkflowTerminal(item)
+  if (workflowTerminal) return workflowTerminal
 
   if (item.status === 'STARTING' && !item.commandId && createdTooOld(item.createdAt)) {
     await ddb.send(new UpdateCommand({

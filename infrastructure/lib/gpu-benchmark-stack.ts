@@ -418,7 +418,7 @@ export class KernelBenchStack extends cdk.Stack {
     const runWorkflowStateMachine = new sfn.StateMachine(this, 'KernelBench-RunWorkflowStateMachine', {
       stateMachineName: `KernelBench-run-workflow-${region}`,
       definitionBody: sfn.DefinitionBody.fromChainable(workflowDefinition),
-      timeout: cdk.Duration.minutes(30),
+      timeout: cdk.Duration.minutes(75),
     });
 
     rpcFn.addEnvironment('RUN_WORKFLOW_STATE_MACHINE_ARN', runWorkflowStateMachine.stateMachineArn);
