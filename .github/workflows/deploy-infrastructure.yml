@@ -128,13 +128,13 @@ jobs:
             --output text)
 
           if [ -z "$GPU_INSTANCE_ID" ] || [ "$GPU_INSTANCE_ID" = "None" ]; then
-            echo "Could not resolve KernelBenchGpuInstanceId" >&2
-            exit 1
+            echo "KernelBenchGpuInstanceId is not available on the currently deployed stack yet; skipping AMI bake for this run."
+            exit 0
           fi
 
           if [ -z "$RUNNER_PROFILE" ] || [ "$RUNNER_PROFILE" = "None" ]; then
-            echo "Could not resolve KernelBenchRunnerInstanceProfileName" >&2
-            exit 1
+            echo "KernelBenchRunnerInstanceProfileName is not available on the currently deployed stack yet; skipping AMI bake for this run."
+            exit 0
           fi
 
           SUBNET_ID=$(aws ec2 describe-instances \
