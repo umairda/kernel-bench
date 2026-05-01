@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { CartesianGrid, Legend, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from 'recharts'
 import { Loader2 } from 'lucide-react'
-import { HistoryTabButton } from './components/HistoryTabButton'
+import { SegmentedControl } from './components/SegmentedControl'
 import { GlowCard } from './components/aceternity/glow-card'
 import {
   type ConvolutionHistoryPoint,
@@ -127,12 +127,16 @@ export default function HistoricalView({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-zinc-300/70 bg-white/80 p-2 dark:border-white/10 dark:bg-zinc-900/50">
-        <div className="grid gap-2 md:grid-cols-3">
-          <HistoryTabButton active={historyRunner === 'all'} onClick={() => onRunnerChange('all')}>CPU + GPU</HistoryTabButton>
-          <HistoryTabButton active={historyRunner === 'cpu'} onClick={() => onRunnerChange('cpu')}>CPU Only</HistoryTabButton>
-          <HistoryTabButton active={historyRunner === 'gpu'} onClick={() => onRunnerChange('gpu')}>GPU Only</HistoryTabButton>
-        </div>
+      <div className="flex justify-start">
+        <SegmentedControl
+          value={historyRunner}
+          onChange={onRunnerChange}
+          options={[
+            { value: 'all', label: 'CPU + GPU' },
+            { value: 'cpu', label: 'CPU Only' },
+            { value: 'gpu', label: 'GPU Only' },
+          ]}
+        />
       </div>
 
       <ChartPanel
