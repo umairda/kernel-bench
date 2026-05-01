@@ -16,6 +16,7 @@ import {
   nowIso,
   stopInstance,
   emitTerminalMetrics,
+  getState,
   ssm,
 } from './shared'
 
@@ -59,6 +60,30 @@ export async function rpcRunStatus(rawParams: unknown) {
   try {
     const inv = await ssm.send(new GetCommandInvocationCommand({ CommandId: commandId, InstanceId: instanceId }))
     const mapped = mapSsmStatus(inv.Status ?? 'Unknown')
+    if (mapped === 'RUNNING') {
+      const state = await getState(instanceId)
+      if (['stopped', 'stopping', 'shutting-down', 'terminated'].includes(state)) {
+        await ddb.send(new UpdateCommand({
+          TableName: RUNS_TABLE_NAME,
+          Key: { runId },
+          UpdateExpression: 'SET #status = :status, #error = :error, ssmStatus = :ssmStatus, updatedAt = :updatedAt, responseCode = :responseCode, completedAt = :completedAt',
+          ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
+          ExpressionAttributeValues: {
+            ':status': 'FAILED',
+            ':error': `Instance state is ${state} while SSM status is ${inv.Status ?? 'Unknown'}`,
+            ':ssmStatus': inv.Status ?? 'Unknown',
+            ':updatedAt': nowIso(),
+            ':responseCode': inv.ResponseCode ?? -1,
+            ':completedAt': nowIso(),
+          },
+        }))
+        await releaseRunnerLock(item.runner, runId)
+        await emitTerminalMetrics(item, 'FAILED')
+        const refreshed = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId } }))
+        item = (refreshed.Item as Record<string, any>) ?? item
+        return publicRunView(item)
+      }
+    }
     const values: Record<string, any> = {
       ':status': mapped,
       ':ssmStatus': inv.Status ?? 'Unknown',

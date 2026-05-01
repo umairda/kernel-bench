@@ -184,7 +184,31 @@ export async function reconcileRunningItem(item: Record<string, any>): Promise<R
   try {
     const inv = await ssm.send(new GetCommandInvocationCommand({ CommandId: item.commandId, InstanceId: item.instanceId }))
     const mapped = mapSsmStatus(inv.Status ?? 'Unknown')
-    if (mapped === 'RUNNING') return item
+    if (mapped === 'RUNNING') {
+      const state = await getState(item.instanceId)
+      if (!['stopped', 'stopping', 'shutting-down', 'terminated'].includes(state)) {
+        return item
+      }
+
+      await ddb.send(new UpdateCommand({
+        TableName: RUNS_TABLE_NAME,
+        Key: { runId: item.runId },
+        UpdateExpression: 'SET #status = :status, #error = :error, ssmStatus = :ssmStatus, updatedAt = :updatedAt, responseCode = :responseCode, completedAt = :completedAt',
+        ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
+        ExpressionAttributeValues: {
+          ':status': 'FAILED',
+          ':error': `Instance state is ${state} while SSM status is ${inv.Status ?? 'Unknown'}`,
+          ':ssmStatus': inv.Status ?? 'Unknown',
+          ':updatedAt': nowIso(),
+          ':responseCode': inv.ResponseCode ?? -1,
+          ':completedAt': nowIso(),
+        },
+      }))
+      await releaseRunnerLock(item.runner, item.runId)
+      await emitTerminalMetrics(item, 'FAILED')
+      const latest = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId: item.runId } }))
+      return (latest.Item as Record<string, any>) ?? item
+    }
 
     await ddb.send(new UpdateCommand({
       TableName: RUNS_TABLE_NAME,
