@@ -88,15 +88,19 @@ ensure_cmake() {
   fi
 
   if command -v dnf >/dev/null 2>&1; then
-    dnf install -y python3-pip
+    dnf install -y cmake
   elif command -v apt-get >/dev/null 2>&1; then
     DEBIAN_FRONTEND=noninteractive apt-get update -y
-    DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pip
+    DEBIAN_FRONTEND=noninteractive apt-get install -y cmake
   else
     echo "No supported package manager found (expected dnf or apt-get)." >&2
     exit 2
   fi
-  python3 -m pip install --upgrade --no-cache-dir cmake
+
+  if ! command -v cmake >/dev/null 2>&1; then
+    echo "cmake is still unavailable after package installation." >&2
+    exit 2
+  fi
 }
 
 ensure_cuda_toolkit_for_gpu() {
