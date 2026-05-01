@@ -22,6 +22,16 @@ function totalOperationDuration(run: RunHistoryRow) {
   return run.performance?.totalDurationMs ?? 0
 }
 
+function formatDuration(value: number) {
+  if (!Number.isFinite(value)) {
+    return 'n/a'
+  }
+  if (value > 1000) {
+    return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)} s`
+  }
+  return `${Math.round(value).toLocaleString()} ms`
+}
+
 function compareValues(a: string | number, b: string | number, direction: SortDirection) {
   const order = direction === 'asc' ? 1 : -1
   if (typeof a === 'number' && typeof b === 'number') {
@@ -83,7 +93,14 @@ export default function RunHistoryView() {
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-white/10">
+          <table className="w-full table-fixed divide-y divide-zinc-200 text-sm dark:divide-white/10">
+            <colgroup>
+              <col className="w-[19%]" />
+              <col className="w-[10%]" />
+              <col className="w-[36%]" />
+              <col className="w-[12%]" />
+              <col className="w-[23%]" />
+            </colgroup>
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                 <th className="px-3 py-3">
@@ -99,7 +116,7 @@ export default function RunHistoryView() {
                   <button type="button" onClick={() => setSort('result')} className="inline-flex items-center gap-1 font-semibold">Result {renderSortIcon('result')}</button>
                 </th>
                 <th className="px-3 py-3">
-                  <button type="button" onClick={() => setSort('duration')} className="inline-flex items-center gap-1 font-semibold">Operation Duration (sum) {renderSortIcon('duration')}</button>
+                  <button type="button" onClick={() => setSort('duration')} className="inline-flex items-center gap-1 font-semibold">Operation Duration {renderSortIcon('duration')}</button>
                 </th>
               </tr>
             </thead>
@@ -108,13 +125,13 @@ export default function RunHistoryView() {
                 <tr key={row.runId} className="align-top">
                   <td className="px-3 py-3 font-mono text-xs text-zinc-800 dark:text-zinc-100">{row.runId}</td>
                   <td className="px-3 py-3 uppercase text-zinc-700 dark:text-zinc-200">{row.runner}</td>
-                  <td className="px-3 py-3 font-mono text-xs text-zinc-600 dark:text-zinc-300">{formatParams(row.params)}</td>
+                  <td className="px-3 py-3 font-mono text-xs text-zinc-600 dark:text-zinc-300 break-words whitespace-normal">{formatParams(row.params)}</td>
                   <td className="px-3 py-3">
                     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-rose-500/10 text-rose-700 dark:text-rose-300'}`}>
                       {resultLabel(row.status)}
                     </span>
                   </td>
-                  <td className="px-3 py-3 text-zinc-700 dark:text-zinc-200">{Math.round(totalOperationDuration(row)).toLocaleString()} ms</td>
+                  <td className="px-3 py-3 text-zinc-700 dark:text-zinc-200">{formatDuration(totalOperationDuration(row))}</td>
                 </tr>
               ))}
             </tbody>
