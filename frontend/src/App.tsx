@@ -4,6 +4,7 @@ import { ConvolutionSection } from './components/ConvolutionSection'
 import { HistoryTabButton } from './components/HistoryTabButton'
 import { InProgressRunsCard } from './components/InProgressRunsCard'
 import { MatmulSection } from './components/MatmulSection'
+import { SegmentedControl } from './components/SegmentedControl'
 import { VectorSection } from './components/VectorSection'
 import { GlowCard } from './components/aceternity/glow-card'
 import { Spotlight } from './components/aceternity/spotlight'
@@ -160,12 +161,16 @@ function App() {
     <div className="space-y-4">
       <InProgressRunsCard items={inProgressRuns.data?.items ?? []} />
 
-      <div className="rounded-2xl border border-zinc-300/70 bg-white/80 p-2 dark:border-white/10 dark:bg-zinc-900/50">
-        <div className="grid gap-2 md:grid-cols-3">
-          <HistoryTabButton active={activeRunTab === 'vector'} onClick={() => setActiveRunTab('vector')}>Vector</HistoryTabButton>
-          <HistoryTabButton active={activeRunTab === 'matmul'} onClick={() => setActiveRunTab('matmul')}>Matrix Multiplication</HistoryTabButton>
-          <HistoryTabButton active={activeRunTab === 'conv'} onClick={() => setActiveRunTab('conv')}>Convolution</HistoryTabButton>
-        </div>
+      <div className="flex justify-start">
+        <SegmentedControl
+          value={activeRunTab}
+          onChange={setActiveRunTab}
+          options={[
+            { value: 'vector', label: 'Vector' },
+            { value: 'matmul', label: 'Matrix Multiplication' },
+            { value: 'conv', label: 'Convolution' },
+          ]}
+        />
       </div>
 
       {activeRunTab === 'vector' ? (
