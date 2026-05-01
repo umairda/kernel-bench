@@ -87,7 +87,15 @@ ensure_cmake() {
     fi
   fi
 
-  dnf install -y python3-pip
+  if command -v dnf >/dev/null 2>&1; then
+    dnf install -y python3-pip
+  elif command -v apt-get >/dev/null 2>&1; then
+    DEBIAN_FRONTEND=noninteractive apt-get update -y
+    DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pip
+  else
+    echo "No supported package manager found (expected dnf or apt-get)." >&2
+    exit 2
+  fi
   python3 -m pip install --upgrade --no-cache-dir cmake
 }
 
@@ -100,18 +108,28 @@ ensure_cuda_toolkit_for_gpu() {
     return 0
   fi
 
-  dnf install -y dnf-plugins-core
-  dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/amzn2023/x86_64/cuda-amzn2023.repo
-  dnf clean all
-  dnf makecache
+  if command -v dnf >/dev/null 2>&1; then
+    dnf install -y dnf-plugins-core
+    dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/amzn2023/x86_64/cuda-amzn2023.repo
+    dnf clean all
+    dnf makecache
+    dnf install -y cuda-compiler-12-6 cuda-cudart-devel-12-6 cuda-libraries-devel-12-6
 
-  dnf install -y cuda-compiler-12-6 cuda-cudart-devel-12-6 cuda-libraries-devel-12-6
-
-  if [[ -f /usr/local/cuda-12.6/bin/nvcc ]]; then
-    ln -sf /usr/local/cuda-12.6/bin/nvcc /usr/local/bin/nvcc || true
-    export PATH="/usr/local/cuda-12.6/bin:${PATH}"
-    export CUDAToolkit_ROOT="/usr/local/cuda-12.6"
-    return 0
+    if [[ -f /usr/local/cuda-12.6/bin/nvcc ]]; then
+      ln -sf /usr/local/cuda-12.6/bin/nvcc /usr/local/bin/nvcc || true
+      export PATH="/usr/local/cuda-12.6/bin:${PATH}"
+      export CUDAToolkit_ROOT="/usr/local/cuda-12.6"
+      return 0
+    fi
+  elif command -v apt-get >/dev/null 2>&1; then
+    DEBIAN_FRONTEND=noninteractive apt-get update -y
+    DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential dkms
+    if command -v nvidia-smi >/dev/null 2>&1; then
+      return 0
+    fi
+  else
+    echo "No supported package manager found (expected dnf or apt-get)." >&2
+    exit 2
   fi
 
   if command -v nvcc >/dev/null 2>&1; then
