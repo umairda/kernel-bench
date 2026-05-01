@@ -56,7 +56,7 @@ jobs:
 
       - name: Install infrastructure deps
         working-directory: infrastructure
-        run: npm ci
+        run: npm install
 
       - name: Build infrastructure
         working-directory: infrastructure

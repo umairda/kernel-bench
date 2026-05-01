@@ -79,7 +79,7 @@ jobs:
 
       - name: Install frontend deps
         working-directory: frontend
-        run: npm ci
+        run: npm install
 
       - name: Build and upload frontend assets
         run: ./infrastructure/scripts/upload-frontend.sh "${{ steps.outputs.outputs.frontend_bucket }}" ./frontend
