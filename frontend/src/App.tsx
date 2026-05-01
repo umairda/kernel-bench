@@ -105,6 +105,22 @@ function shouldAdoptRun(candidate: RunRecord | undefined, current: RunRecord | u
   return String(candidate.createdAt ?? '') > String(current.createdAt ?? '')
 }
 
+function formatBuildDate(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  }).format(date)
+}
+
 function App() {
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem('kernelbench-theme')
@@ -346,6 +362,10 @@ function App() {
             <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Test Executing
           </div>
         ) : null}
+
+        <footer className="pb-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+          Build: {__APP_BUILD_SHA__}, {formatBuildDate(__APP_BUILD_DATE__)}
+        </footer>
       </div>
     </main>
   )
