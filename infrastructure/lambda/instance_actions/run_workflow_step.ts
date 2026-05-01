@@ -131,7 +131,7 @@ async function dispatch(input: WorkflowInput) {
   })).toString('base64')
 
   const commands = [
-    'set -euo pipefail',
+    'set -eu',
     `mkdir -p /opt/kernel-bench/runs/${input.runId}`,
     `cd /opt/kernel-bench/runs/${input.runId}`,
     `aws s3 cp s3://${ARTIFACT_BUCKET_NAME}/${SOURCE_ARCHIVE_KEY} source.tar.gz`,

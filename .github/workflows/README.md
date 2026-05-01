@@ -8,25 +8,18 @@ Purpose:
 
 - install infrastructure dependencies
 - build and deploy the CDK stack
-- conditionally bake a GPU AMI for environment/toolchain changes
-- publish the latest GPU AMI ID to SSM
 - upload the latest source bundle to the artifact bucket
 
 Important details:
 
 - uses GitHub OIDC to assume the AWS deploy role
-- reads the latest GPU AMI ID from SSM and passes it to the CDK app through `KERNELBENCH_GPU_AMI_ID`
-- only bakes a new AMI for selected paths such as:
-  - `infrastructure/lib/gpu-benchmark-stack.ts`
-  - `infrastructure/bin/gpu-compute-infra.ts`
-  - `infrastructure/scripts/prepare_gpu_ami.sh`
-  - `infrastructure/scripts/remote_kernel_benchmark.sh`
-  - `compute-framework/CMakeLists.txt`
+- optionally uses `KERNELBENCH_GPU_AMI_ID` when provided
+- if `KERNELBENCH_GPU_AMI_ID` is not set, CDK looks up the latest x86_64 NVIDIA GPU-Optimized AMI from AWS Marketplace
 
 Operational effect:
 
-- normal benchmark source changes usually redeploy infra and upload a new source bundle
-- environment changes can replace the GPU runner with a newly baked AMI
+- benchmark/infrastructure changes redeploy infra and upload a new source bundle
+- GPU runner launches from your configured NVIDIA AMI, or the latest Marketplace NVIDIA GPU-Optimized AMI fallback (no custom AMI bake step)
 
 ## deploy-frontend.yml
 
@@ -50,8 +43,7 @@ Examples used by the workflows:
 - `AWS_REGION`
 - `KERNELBENCH_GITHUB_REPO`
 - `KERNELBENCH_GITHUB_BRANCH`
-- `KERNELBENCH_GPU_AMI_SSM_PARAMETER_NAME`
-- `KERNELBENCH_GPU_AMI_BUILDER_INSTANCE_TYPE`
+- `KERNELBENCH_GPU_AMI_ID` (optional override)
 
 ## Local Equivalent Commands
 

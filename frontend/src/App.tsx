@@ -89,6 +89,44 @@ function App() {
   const instanceStates = useGetInstanceStatesQuery()
 
   useEffect(() => {
+    const items = inProgressRuns.data?.items ?? []
+    if (items.length === 0) {
+      return
+    }
+
+    const latestByKey = new Map<string, RunRecord>()
+    for (const item of items) {
+      const key = `${item.benchmark}:${item.runner}`
+      if (!latestByKey.has(key)) {
+        latestByKey.set(key, item)
+      }
+    }
+
+    const vectorCpu = latestByKey.get('vector:cpu')?.runId ?? null
+    const vectorGpu = latestByKey.get('vector:gpu')?.runId ?? null
+    const matmulCpu = latestByKey.get('matrix-multiplication:cpu')?.runId ?? null
+    const matmulGpu = latestByKey.get('matrix-multiplication:gpu')?.runId ?? null
+    const convCpu = latestByKey.get('convolution:cpu')?.runId ?? null
+    const convGpu = latestByKey.get('convolution:gpu')?.runId ?? null
+
+    setVectorRuns((s) => ({
+      ...s,
+      cpuRunId: s.cpuRunId ?? vectorCpu,
+      gpuRunId: s.gpuRunId ?? vectorGpu,
+    }))
+    setMatmulRuns((s) => ({
+      ...s,
+      cpuRunId: s.cpuRunId ?? matmulCpu,
+      gpuRunId: s.gpuRunId ?? matmulGpu,
+    }))
+    setConvRuns((s) => ({
+      ...s,
+      cpuRunId: s.cpuRunId ?? convCpu,
+      gpuRunId: s.gpuRunId ?? convGpu,
+    }))
+  }, [inProgressRuns.data?.items])
+
+  useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
     localStorage.setItem('kernelbench-theme', theme)
   }, [theme])

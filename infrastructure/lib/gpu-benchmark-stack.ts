@@ -181,7 +181,15 @@ export class KernelBenchStack extends cdk.Stack {
     });
     const gpuMachineImage = props.gpuAmiId
       ? ec2.MachineImage.genericLinux({ [region]: props.gpuAmiId })
-      : machineImage;
+      : ec2.MachineImage.lookup({
+        name: 'NVIDIA GPU Cloud VMI Base*',
+        owners: ['679593333241', '492681118881'],
+        filters: {
+          architecture: ['x86_64'],
+          'root-device-type': ['ebs'],
+          'virtualization-type': ['hvm'],
+        },
+      });
 
     const cpuRunner = this.createRunner({
       idPrefix: 'KernelBench-CpuRunner',
@@ -202,8 +210,8 @@ export class KernelBenchStack extends cdk.Stack {
       vpc,
       sg,
       machineImage: gpuMachineImage,
-      installGpuDrivers: true,
-      assumePreparedImage: Boolean(props.gpuAmiId),
+      installGpuDrivers: false,
+      assumePreparedImage: true,
     });
 
     const stopOnCreate = new cr.AwsCustomResource(this, 'KernelBench-StopDefaultInstances', {
@@ -215,7 +223,16 @@ export class KernelBenchStack extends cdk.Stack {
         },
         physicalResourceId: cr.PhysicalResourceId.of(`KernelBench-stop-default-${Date.now()}`),
       },
+      onUpdate: {
+        service: 'EC2',
+        action: 'stopInstances',
+        parameters: {
+          InstanceIds: [cpuRunner.instanceId, gpuRunner.instanceId],
+        },
+        physicalResourceId: cr.PhysicalResourceId.of(`KernelBench-stop-update-${Date.now()}`),
+      },
       policy: cr.AwsCustomResourcePolicy.fromSdkCalls({ resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE }),
+      installLatestAwsSdk: false,
       timeout: cdk.Duration.minutes(5),
     });
     stopOnCreate.node.addDependency(cpuRunner);
@@ -493,7 +510,7 @@ export class KernelBenchStack extends cdk.Stack {
     });
     new cdk.CfnOutput(this, 'KernelBench-RunnerInstanceProfileName', {
       value: runnerInstanceProfile.ref,
-      description: 'Instance profile name used for temporary AMI bake instances',
+      description: 'Instance profile name used by benchmark runner instances',
     });
 
     new cdk.CfnOutput(this, 'KernelBench-RunsTableName', {
