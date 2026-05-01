@@ -60,8 +60,6 @@ Examples used by the workflows:
 - `KERNELBENCH_GITHUB_BRANCH`
 - `KERNELBENCH_GPU_AMI_ID` (optional override)
 - `KERNELBENCH_CLOUDFRONT_DOMAIN_NAME` (optional, e.g. `kernel-bench.com`)
-- `KERNELBENCH_CLOUDFRONT_HOSTED_ZONE_ID` (optional, Route53 zone id for domain)
-- `KERNELBENCH_CLOUDFRONT_HOSTED_ZONE_NAME` (optional, Route53 zone name like `kernel-bench.com`)
 
 ## Local Equivalent Commands
 

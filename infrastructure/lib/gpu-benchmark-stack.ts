@@ -62,16 +62,6 @@ export class KernelBenchStack extends cdk.Stack {
       default: '',
       description: 'Optional custom domain name for CloudFront (for example: kernel-bench.com).',
     });
-    const cloudFrontHostedZoneId = new cdk.CfnParameter(this, 'KernelBench-CloudFrontHostedZoneId', {
-      type: 'String',
-      default: '',
-      description: 'Optional Route53 hosted zone ID for KernelBench-CloudFrontDomainName (for example: Z123ABC...).',
-    });
-    const cloudFrontHostedZoneName = new cdk.CfnParameter(this, 'KernelBench-CloudFrontHostedZoneName', {
-      type: 'String',
-      default: '',
-      description: 'Optional Route53 hosted zone name for KernelBench-CloudFrontDomainName (for example: kernel-bench.com).',
-    });
 
     const githubOidcProviderArn = `arn:aws:iam::${account}:oidc-provider/token.actions.githubusercontent.com`;
     const githubOidcProvider = iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(
@@ -506,12 +496,36 @@ export class KernelBenchStack extends cdk.Stack {
       ],
     });
     const hasCustomCloudFrontDomain = new cdk.CfnCondition(this, 'KernelBench-HasCustomCloudFrontDomain', {
-      expression: cdk.Fn.conditionAnd(
-        cdk.Fn.conditionNot(cdk.Fn.conditionEquals(cloudFrontDomainName.valueAsString, '')),
-        cdk.Fn.conditionNot(cdk.Fn.conditionEquals(cloudFrontHostedZoneId.valueAsString, '')),
-        cdk.Fn.conditionNot(cdk.Fn.conditionEquals(cloudFrontHostedZoneName.valueAsString, '')),
-      ),
+      expression: cdk.Fn.conditionNot(cdk.Fn.conditionEquals(cloudFrontDomainName.valueAsString, '')),
     });
+
+    const hostedZoneLookup = new cr.AwsCustomResource(this, 'KernelBench-CloudFrontHostedZoneLookup', {
+      onCreate: {
+        service: 'Route53',
+        action: 'listHostedZonesByName',
+        parameters: {
+          DNSName: cdk.Fn.join('', [cloudFrontDomainName.valueAsString, '.']),
+          MaxItems: '1',
+        },
+        physicalResourceId: cr.PhysicalResourceId.of(`KernelBench-zone-lookup-${Date.now()}`),
+      },
+      onUpdate: {
+        service: 'Route53',
+        action: 'listHostedZonesByName',
+        parameters: {
+          DNSName: cdk.Fn.join('', [cloudFrontDomainName.valueAsString, '.']),
+          MaxItems: '1',
+        },
+        physicalResourceId: cr.PhysicalResourceId.of(`KernelBench-zone-lookup-update-${Date.now()}`),
+      },
+      policy: cr.AwsCustomResourcePolicy.fromSdkCalls({ resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE }),
+      installLatestAwsSdk: false,
+      timeout: cdk.Duration.minutes(2),
+    });
+    const hostedZoneLookupResource = hostedZoneLookup.node.defaultChild as cdk.CfnResource
+    hostedZoneLookupResource.cfnOptions.condition = hasCustomCloudFrontDomain
+    const hostedZoneIdPath = hostedZoneLookup.getResponseField('HostedZones.0.Id')
+    const hostedZoneId = cdk.Fn.select(2, cdk.Fn.split('/', hostedZoneIdPath))
 
     const customDomainCertificate = new acm.CfnCertificate(this, 'KernelBench-CloudFrontCertificate', {
       domainName: cloudFrontDomainName.valueAsString,
@@ -519,7 +533,7 @@ export class KernelBenchStack extends cdk.Stack {
       domainValidationOptions: [
         {
           domainName: cloudFrontDomainName.valueAsString,
-          hostedZoneId: cloudFrontHostedZoneId.valueAsString,
+          hostedZoneId,
         },
       ],
     });
@@ -547,7 +561,7 @@ export class KernelBenchStack extends cdk.Stack {
       ),
     )
     const customDomainARecord = new route53.CfnRecordSet(this, 'KernelBench-CloudFrontARecord', {
-      hostedZoneId: cloudFrontHostedZoneId.valueAsString,
+      hostedZoneId,
       name: cloudFrontDomainName.valueAsString,
       type: 'A',
       aliasTarget: {
@@ -558,7 +572,7 @@ export class KernelBenchStack extends cdk.Stack {
     customDomainARecord.cfnOptions.condition = hasCustomCloudFrontDomain
 
     const customDomainAaaaRecord = new route53.CfnRecordSet(this, 'KernelBench-CloudFrontAaaaRecord', {
-      hostedZoneId: cloudFrontHostedZoneId.valueAsString,
+      hostedZoneId,
       name: cloudFrontDomainName.valueAsString,
       type: 'AAAA',
       aliasTarget: {
