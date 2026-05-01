@@ -79,4 +79,4 @@ jobs:
           echo "artifact_bucket=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Upload latest source archive
-        run: ./infrastructure/scripts/upload-source.sh "${{ steps.outputs.outputs.artifact_bucket }}"
+        run: bash ./infrastructure/scripts/upload-source.sh "${{ steps.outputs.outputs.artifact_bucket }}"
