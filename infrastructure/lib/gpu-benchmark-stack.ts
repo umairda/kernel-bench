@@ -733,7 +733,11 @@ export class KernelBenchStack extends cdk.Stack {
     if (args.installGpuDrivers && !args.assumePreparedImage) {
       userData.addCommands(
         '# Best-effort NVIDIA driver setup for GPU instances.',
-        'dnf install -y nvidia-driver-latest-dkms || true',
+        'DRIVER_PKG=""',
+        'if dnf list --available nvidia-driver-latest-dkms >/dev/null 2>&1; then DRIVER_PKG="nvidia-driver-latest-dkms"; fi',
+        'if [ -z "$DRIVER_PKG" ] && dnf list --available nvidia-driver >/dev/null 2>&1; then DRIVER_PKG="nvidia-driver"; fi',
+        'if [ -z "$DRIVER_PKG" ] && dnf list --available kmod-nvidia-latest-dkms >/dev/null 2>&1; then DRIVER_PKG="kmod-nvidia-latest-dkms"; fi',
+        'if [ -n "$DRIVER_PKG" ]; then dnf install -y "$DRIVER_PKG" || true; else echo "No NVIDIA driver package available in configured repos" >&2; fi',
       );
     }
 
