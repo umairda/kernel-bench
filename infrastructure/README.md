@@ -7,14 +7,14 @@ This directory contains the AWS control plane for KernelBench.
 The infrastructure layer is responsible for:
 
 - serving the frontend through CloudFront
-- exposing a single JSON-RPC API at `POST /rpc`
+- exposing a single JSON-RPC API at `POST /api`
 - orchestrating CPU and GPU EC2 benchmark runners through SSM
 - storing live run state and historical benchmark data in DynamoDB
 - storing source bundles and benchmark artifacts in S3
 
 ## Architecture Decisions
 
-- JSON-RPC over HTTP: the backend intentionally exposes one route, `POST /rpc`, and dispatches methods in Lambda rather than mixing many REST-style paths.
+- JSON-RPC over HTTP: the backend intentionally exposes one route, `POST /api`, and dispatches methods in Lambda rather than mixing many REST-style paths.
 - Long-lived runner instances: CPU and GPU EC2 instances are provisioned once and started/stopped around work instead of launching a fresh instance for every run.
 - Dedicated history table: chart-friendly historical data is stored separately from live run state so UI queries stay simple.
 - Source bundles, not source-only uploads: uploads now include a manifest and can optionally embed prebuilt binaries.

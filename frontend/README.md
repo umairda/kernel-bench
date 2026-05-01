@@ -9,7 +9,7 @@ The frontend has two jobs:
 - launch and monitor live benchmark runs
 - visualize historical CPU and GPU results on shared charts
 
-It talks only to the backend JSON-RPC endpoint at `POST /rpc`.
+It talks only to the backend JSON-RPC endpoint at `POST /api`.
 
 ## Architecture Decisions
 
@@ -59,7 +59,7 @@ Implemented JSON-RPC methods:
 - `historyMatmul`
 - `historyConvolution`
 
-If `VITE_API_BASE_URL` is unset, the frontend calls relative `/rpc` on the current origin. For local development against the deployed backend, set:
+If `VITE_API_BASE_URL` is unset, the frontend calls relative `/api` on the current origin. For local development against the deployed backend, set:
 
 ```bash
 VITE_API_BASE_URL=https://<cloudfront-domain>

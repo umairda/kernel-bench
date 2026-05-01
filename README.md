@@ -27,7 +27,7 @@ Each of those directories now has its own README with deeper architectural notes
 Frontend SPA
   -> CloudFront
       -> S3 static assets
-      -> POST /rpc JSON-RPC API
+      -> POST /api JSON-RPC API
           -> Lambda dispatcher
               -> DynamoDB runs/history
               -> EC2 + SSM benchmark runners
@@ -37,7 +37,7 @@ Frontend SPA
 
 ## Key Decisions
 
-- True JSON-RPC API instead of REST-shaped `/rpc/*` routes.
+- True JSON-RPC API exposed at `/api` instead of a larger REST-style route surface.
 - Separate live run state and historical chart data in DynamoDB.
 - Long-lived CPU/GPU runner instances controlled with SSM.
 - Source bundles for normal C++ changes.

@@ -139,7 +139,7 @@ export const queryKeys = {
 
 async function rpc<T>(method: string, params?: unknown): Promise<T> {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-  const res = await fetch(`${API_BASE}/rpc`, {
+  const res = await fetch(`${API_BASE}/api`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

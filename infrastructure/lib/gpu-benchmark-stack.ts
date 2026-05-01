@@ -446,7 +446,7 @@ export class KernelBenchStack extends cdk.Stack {
     });
 
     api.addRoutes({
-      path: '/rpc',
+      path: '/api',
       methods: [apigwv2.HttpMethod.POST],
       integration: new integrations.HttpLambdaIntegration('KernelBench-RpcIntegration', rpcFn),
     });
@@ -467,7 +467,7 @@ export class KernelBenchStack extends cdk.Stack {
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
       },
       additionalBehaviors: {
-        'rpc*': {
+        'api*': {
           origin: new origins.HttpOrigin(apiDomainName, {
             protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
             customHeaders: {
@@ -626,7 +626,7 @@ export class KernelBenchStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'KernelBench-CloudFrontDomain', {
       value: distribution.distributionDomainName,
-      description: 'CloudFront domain serving frontend and /rpc API routes',
+      description: 'CloudFront domain serving frontend and /api API routes',
     });
     new cdk.CfnOutput(this, 'KernelBench-GithubActionsDeployRoleArn', {
       value: githubActionsDeployRole.roleArn,
