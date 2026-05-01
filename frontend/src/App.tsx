@@ -12,6 +12,7 @@ import {
   type Runner,
   type RunRecord,
   useGetInstanceStatesQuery,
+  useGetRunHistoryQuery,
   useGetRunStatusQuery,
   useListInProgressRunsQuery,
 } from './lib/api'
@@ -64,6 +65,46 @@ function sectionExecuting(runCpu?: RunRecord, runGpu?: RunRecord, cpuLaunching?:
   )
 }
 
+function latestRunByKey(items: RunRecord[]) {
+  const latestByKey = new Map<string, RunRecord>()
+
+  for (const item of items) {
+    const key = `${item.benchmark}:${item.runner}`
+    const current = latestByKey.get(key)
+    if (!current || String(item.createdAt ?? '') > String(current.createdAt ?? '')) {
+      latestByKey.set(key, item)
+    }
+  }
+
+  return latestByKey
+}
+
+function pickDisplayedRun(current: RunRecord | undefined, latest: RunRecord | undefined, expectedRunId: string | null) {
+  if (current) {
+    return current
+  }
+  if (!latest) {
+    return undefined
+  }
+  if (!expectedRunId || latest.runId === expectedRunId) {
+    return latest
+  }
+  return undefined
+}
+
+function shouldAdoptRun(candidate: RunRecord | undefined, current: RunRecord | undefined) {
+  if (!candidate) {
+    return false
+  }
+  if (!current) {
+    return true
+  }
+  if (candidate.runId === current.runId) {
+    return false
+  }
+  return String(candidate.createdAt ?? '') > String(current.createdAt ?? '')
+}
+
 function App() {
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem('kernelbench-theme')
@@ -88,51 +129,63 @@ function App() {
   const convGpu = useGetRunStatusQuery(convRuns.gpuRunId)
 
   const inProgressRuns = useListInProgressRunsQuery()
+  const runHistory = useGetRunHistoryQuery()
   const instanceStates = useGetInstanceStatesQuery()
+  const latestKnownRuns = useMemo(() => latestRunByKey([
+    ...(inProgressRuns.data?.items ?? []),
+    ...(runHistory.data?.items ?? []),
+  ]), [inProgressRuns.data?.items, runHistory.data?.items])
 
   useEffect(() => {
-    const items = inProgressRuns.data?.items ?? []
-    if (items.length === 0) {
+    if (latestKnownRuns.size === 0) {
       return
     }
 
-    const latestByKey = new Map<string, RunRecord>()
-    for (const item of items) {
-      const key = `${item.benchmark}:${item.runner}`
-      if (!latestByKey.has(key)) {
-        latestByKey.set(key, item)
-      }
-    }
+    const latestVectorCpu = latestKnownRuns.get('vector:cpu')
+    const latestVectorGpu = latestKnownRuns.get('vector:gpu')
+    const latestMatmulCpu = latestKnownRuns.get('matrix-multiplication:cpu')
+    const latestMatmulGpu = latestKnownRuns.get('matrix-multiplication:gpu')
+    const latestConvCpu = latestKnownRuns.get('convolution:cpu')
+    const latestConvGpu = latestKnownRuns.get('convolution:gpu')
 
-    const vectorCpu = latestByKey.get('vector:cpu')?.runId ?? null
-    const vectorGpu = latestByKey.get('vector:gpu')?.runId ?? null
-    const matmulCpu = latestByKey.get('matrix-multiplication:cpu')?.runId ?? null
-    const matmulGpu = latestByKey.get('matrix-multiplication:gpu')?.runId ?? null
-    const convCpu = latestByKey.get('convolution:cpu')?.runId ?? null
-    const convGpu = latestByKey.get('convolution:gpu')?.runId ?? null
+    setVectorRuns((s) => {
+      const nextCpuRunId = shouldAdoptRun(latestVectorCpu, vectorCpu.data) ? latestVectorCpu!.runId : s.cpuRunId
+      const nextGpuRunId = shouldAdoptRun(latestVectorGpu, vectorGpu.data) ? latestVectorGpu!.runId : s.gpuRunId
+      return nextCpuRunId !== s.cpuRunId || nextGpuRunId !== s.gpuRunId
+        ? { ...s, cpuRunId: nextCpuRunId, gpuRunId: nextGpuRunId, cpuStartError: null, gpuStartError: null }
+        : s
+    })
+    setMatmulRuns((s) => {
+      const nextCpuRunId = shouldAdoptRun(latestMatmulCpu, matmulCpu.data) ? latestMatmulCpu!.runId : s.cpuRunId
+      const nextGpuRunId = shouldAdoptRun(latestMatmulGpu, matmulGpu.data) ? latestMatmulGpu!.runId : s.gpuRunId
+      return nextCpuRunId !== s.cpuRunId || nextGpuRunId !== s.gpuRunId
+        ? { ...s, cpuRunId: nextCpuRunId, gpuRunId: nextGpuRunId, cpuStartError: null, gpuStartError: null }
+        : s
+    })
+    setConvRuns((s) => {
+      const nextCpuRunId = shouldAdoptRun(latestConvCpu, convCpu.data) ? latestConvCpu!.runId : s.cpuRunId
+      const nextGpuRunId = shouldAdoptRun(latestConvGpu, convGpu.data) ? latestConvGpu!.runId : s.gpuRunId
+      return nextCpuRunId !== s.cpuRunId || nextGpuRunId !== s.gpuRunId
+        ? { ...s, cpuRunId: nextCpuRunId, gpuRunId: nextGpuRunId, cpuStartError: null, gpuStartError: null }
+        : s
+    })
+  }, [
+    convCpu.data,
+    convGpu.data,
+    inProgressRuns.data?.items,
+    matmulCpu.data,
+    matmulGpu.data,
+    latestKnownRuns,
+    vectorCpu.data,
+    vectorGpu.data,
+  ])
 
-    setVectorRuns((s) => (vectorCpu || vectorGpu ? {
-      ...s,
-      cpuRunId: vectorCpu,
-      gpuRunId: vectorGpu,
-      cpuStartError: null,
-      gpuStartError: null,
-    } : s))
-    setMatmulRuns((s) => (matmulCpu || matmulGpu ? {
-      ...s,
-      cpuRunId: matmulCpu,
-      gpuRunId: matmulGpu,
-      cpuStartError: null,
-      gpuStartError: null,
-    } : s))
-    setConvRuns((s) => (convCpu || convGpu ? {
-      ...s,
-      cpuRunId: convCpu,
-      gpuRunId: convGpu,
-      cpuStartError: null,
-      gpuStartError: null,
-    } : s))
-  }, [inProgressRuns.data?.items])
+  const displayedVectorCpu = pickDisplayedRun(vectorCpu.data, latestKnownRuns.get('vector:cpu'), vectorRuns.cpuRunId)
+  const displayedVectorGpu = pickDisplayedRun(vectorGpu.data, latestKnownRuns.get('vector:gpu'), vectorRuns.gpuRunId)
+  const displayedMatmulCpu = pickDisplayedRun(matmulCpu.data, latestKnownRuns.get('matrix-multiplication:cpu'), matmulRuns.cpuRunId)
+  const displayedMatmulGpu = pickDisplayedRun(matmulGpu.data, latestKnownRuns.get('matrix-multiplication:gpu'), matmulRuns.gpuRunId)
+  const displayedConvCpu = pickDisplayedRun(convCpu.data, latestKnownRuns.get('convolution:cpu'), convRuns.cpuRunId)
+  const displayedConvGpu = pickDisplayedRun(convGpu.data, latestKnownRuns.get('convolution:gpu'), convRuns.gpuRunId)
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
@@ -177,8 +230,8 @@ function App() {
         <VectorSection
           cpuState={cpuState}
           gpuState={gpuState}
-          cpuRun={vectorCpu.data}
-          gpuRun={vectorGpu.data}
+          cpuRun={displayedVectorCpu}
+          gpuRun={displayedVectorGpu}
           cpuStartError={vectorRuns.cpuStartError}
           gpuStartError={vectorRuns.gpuStartError}
           cpuTitle={formatInstanceStateTitle(cpuState)}
@@ -194,8 +247,8 @@ function App() {
         <MatmulSection
           cpuState={cpuState}
           gpuState={gpuState}
-          cpuRun={matmulCpu.data}
-          gpuRun={matmulGpu.data}
+          cpuRun={displayedMatmulCpu}
+          gpuRun={displayedMatmulGpu}
           cpuStartError={matmulRuns.cpuStartError}
           gpuStartError={matmulRuns.gpuStartError}
           cpuTitle={formatInstanceStateTitle(cpuState)}
@@ -211,8 +264,8 @@ function App() {
         <ConvolutionSection
           cpuState={cpuState}
           gpuState={gpuState}
-          cpuRun={convCpu.data}
-          gpuRun={convGpu.data}
+          cpuRun={displayedConvCpu}
+          gpuRun={displayedConvGpu}
           cpuStartError={convRuns.cpuStartError}
           gpuStartError={convRuns.gpuStartError}
           cpuTitle={formatInstanceStateTitle(cpuState)}
