@@ -60,7 +60,7 @@ void run_main(int argc, char *argv[])
         break;
     }
 
-    print_operation_result(std::cout, status, out);
+    print_operation_result(std::cout, status, out, args.dump_output_csv);
 }
 } // namespace
 

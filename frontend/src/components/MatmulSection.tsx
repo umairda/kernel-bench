@@ -6,6 +6,22 @@ import { RunStatusCard } from './RunStatusCard'
 import { ShimmerButton } from './aceternity/shimmer-button'
 
 type MatmulParams = { inputRows: number; inputCols: number; outputCols: number }
+const BYTES_PER_FLOAT32 = 4
+const G4DN_XLARGE_MATMUL_TOTAL_BYTES_LIMIT = 8 * 1024 * 1024 * 1024
+
+function formatBytes(bytes: number) {
+  const numberFormat = { minimumFractionDigits: 1, maximumFractionDigits: 1 }
+  if (bytes >= 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024 * 1024)).toLocaleString(undefined, numberFormat)} GiB`
+  }
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toLocaleString(undefined, numberFormat)} MiB`
+  }
+  if (bytes >= 1024) {
+    return `${(bytes / 1024).toLocaleString(undefined, numberFormat)} KiB`
+  }
+  return `${bytes.toLocaleString(undefined, numberFormat)} B`
+}
 
 export function MatmulSection({
   cpuState,
@@ -49,6 +65,11 @@ export function MatmulSection({
   const gpuLaunching = gpuStart.isPending
   const isCpuExecuting = cpuLaunching || cpuRun?.status === 'STARTING' || cpuRun?.status === 'RUNNING'
   const isGpuExecuting = gpuLaunching || gpuRun?.status === 'STARTING' || gpuRun?.status === 'RUNNING'
+  const bytesInputA = params.inputRows * params.inputCols * BYTES_PER_FLOAT32
+  const bytesInputB = params.inputCols * params.outputCols * BYTES_PER_FLOAT32
+  const bytesOutput = params.inputRows * params.outputCols * BYTES_PER_FLOAT32
+  const bytesTotal = bytesInputA + bytesInputB + bytesOutput
+  const overLimit = bytesTotal > G4DN_XLARGE_MATMUL_TOTAL_BYTES_LIMIT
 
   return (
     <div className="rounded-2xl border border-zinc-300/70 bg-white/80 px-5 py-5 dark:border-white/10 dark:bg-zinc-900/50">
@@ -60,6 +81,17 @@ export function MatmulSection({
           <NumberField label="Input Rows" min={1} value={params.inputRows} onChange={(value) => setParams((p) => ({ ...p, inputRows: value }))} />
           <NumberField label="Input Cols (= Output Rows)" min={1} value={params.inputCols} onChange={(value) => setParams((p) => ({ ...p, inputCols: value }))} />
           <NumberField label="Output Cols" min={1} value={params.outputCols} onChange={(value) => setParams((p) => ({ ...p, outputCols: value }))} />
+        </div>
+        <div className="rounded-xl border border-zinc-300 bg-zinc-100 p-3 text-xs text-zinc-700 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-300">
+          <p><span className="font-semibold">Input A:</span> {formatBytes(bytesInputA)}</p>
+          <p><span className="font-semibold">Input B:</span> {formatBytes(bytesInputB)}</p>
+          <p><span className="font-semibold">Output:</span> {formatBytes(bytesOutput)}</p>
+          <p className={`mt-1 ${overLimit ? 'text-red-700 dark:text-red-300' : ''}`}>
+            <span className="font-semibold">Total:</span> {formatBytes(bytesTotal)}
+          </p>
+          <p className="mt-1 text-zinc-600 dark:text-zinc-400">
+            Constraint (g4dn.xlarge): total should be less than {formatBytes(G4DN_XLARGE_MATMUL_TOTAL_BYTES_LIMIT)}
+          </p>
         </div>
         <div className="flex flex-wrap gap-3">
           <ShimmerButton

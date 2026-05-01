@@ -148,11 +148,19 @@ std::string vector_to_csv(const std::vector<float> &values)
 void print_operation_result(
     std::ostream &out,
     const StatusCode status,
-    const std::vector<float> &output)
+    const std::vector<float> &output,
+    const bool dump_output_csv)
 {
     if (status == StatusCode::Success)
     {
-        out << "Success, out = " << vector_to_csv(output) << std::endl;
+        if (dump_output_csv)
+        {
+            out << "Success, out = " << vector_to_csv(output) << std::endl;
+        }
+        else
+        {
+            out << "Success" << std::endl;
+        }
         return;
     }
 

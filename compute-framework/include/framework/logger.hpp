@@ -50,7 +50,8 @@ std::string vector_to_csv(const std::vector<float> &values);
 void print_operation_result(
     std::ostream &out,
     StatusCode status,
-    const std::vector<float> &output);
+    const std::vector<float> &output,
+    bool dump_output_csv);
 
 void print_benchmark_row(
     std::ostream &out,

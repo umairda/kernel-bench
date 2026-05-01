@@ -97,6 +97,19 @@ Backend parse_backend(const std::string &name)
     throw std::invalid_argument(join_message("Unsupported backend: ", name));
 }
 
+bool parse_bool_flag_value(const std::string &value, const std::string &name)
+{
+    if (value == "true" || value == "1" || value == "yes")
+    {
+        return true;
+    }
+    if (value == "false" || value == "0" || value == "no")
+    {
+        return false;
+    }
+    throw std::invalid_argument(join_message("Unsupported value for ", name, ": ", value, " (expected true/false)"));
+}
+
 const std::string &required_flag(
     const std::unordered_map<std::string, std::string> &flags,
     const std::string &name)
@@ -165,9 +178,9 @@ std::vector<float> generate_modulated(IndexType count, IndexType mod_base)
 void print_usage(const char *program, std::ostream &out)
 {
     out << "Usage:\n";
-    out << "  " << program << " --op vector --backend <cpu|gpu> --vector-op <add|subtract|multiply|divide> [--length <n>] [--a <csv>|--a-file <path>] [--b <csv>|--b-file <path>]\n";
-    out << "  " << program << " --op matmul --backend <cpu|gpu> --a-rows <n> --a-cols <n> --b-rows <n> --b-cols <n> [--a <csv>|--a-file <path>] [--b <csv>|--b-file <path>]\n";
-    out << "  " << program << " --op convolution --backend <cpu|gpu> --n <n> --c-in <n> --h-in <n> --w-in <n> --c-out <n> --k-h <n> --k-w <n> --stride-h <n> --stride-w <n> --pad-h <n> --pad-w <n> [--input <csv>|--input-file <path>] [--filter <csv>|--filter-file <path>]\n";
+    out << "  " << program << " --op vector --backend <cpu|gpu> --vector-op <add|subtract|multiply|divide> [--length <n>] [--a <csv>|--a-file <path>] [--b <csv>|--b-file <path>] [--dump-output-csv <true|false>]\n";
+    out << "  " << program << " --op matmul --backend <cpu|gpu> --a-rows <n> --a-cols <n> --b-rows <n> --b-cols <n> [--a <csv>|--a-file <path>] [--b <csv>|--b-file <path>] [--dump-output-csv <true|false>]\n";
+    out << "  " << program << " --op convolution --backend <cpu|gpu> --n <n> --c-in <n> --h-in <n> --w-in <n> --c-out <n> --k-h <n> --k-w <n> --stride-h <n> --stride-w <n> --pad-h <n> --pad-w <n> [--input <csv>|--input-file <path>] [--filter <csv>|--filter-file <path>] [--dump-output-csv <true|false>]\n";
     out << "Examples:\n";
     out << "  " << program << " --op vector --backend cpu --vector-op add --length 1000000\n";
     out << "  " << program << " --op matmul --backend gpu --a-rows 2 --a-cols 3 --b-rows 3 --b-cols 2 --a \"1,2,3,4,5,6\" --b \"7,8,9,10,11,12\"\n";
@@ -203,6 +216,11 @@ ParsedArgs parse_args(int argc, char *argv[])
     ParsedArgs parsed{};
     const std::string op = required_flag(flags, "--op");
     parsed.backend = parse_backend(required_flag(flags, "--backend"));
+    const auto dump_csv_it = flags.find("--dump-output-csv");
+    if (dump_csv_it != flags.end())
+    {
+        parsed.dump_output_csv = parse_bool_flag_value(dump_csv_it->second, "--dump-output-csv");
+    }
 
     if (op == "vector")
     {

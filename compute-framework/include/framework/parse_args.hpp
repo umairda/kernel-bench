@@ -16,6 +16,7 @@ struct ParsedArgs
 {
     CliOperation operation = CliOperation::Vector;
     Backend backend = Backend::CPU;
+    bool dump_output_csv = false;
 
     VectorOpParams vector_params{};
     MatrixMultiplyParams matmul_params{};
