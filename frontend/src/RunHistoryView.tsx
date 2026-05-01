@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import { GlowCard } from './components/aceternity/glow-card'
 import { type RunHistoryRow, useGetRunHistoryQuery } from './lib/api'
 
-type SortKey = 'runId' | 'runner' | 'parameters' | 'result' | 'duration'
+type SortKey = 'runId' | 'createdAt' | 'runner' | 'parameters' | 'result' | 'duration'
 type SortDirection = 'asc' | 'desc'
 
 function formatParams(params: Record<string, number> | undefined) {
@@ -32,6 +32,23 @@ function formatDuration(value: number) {
   return `${Math.round(value).toLocaleString()} ms`
 }
 
+function formatCreatedAt(value?: string) {
+  if (!value) {
+    return 'n/a'
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
+}
+
 function compareValues(a: string | number, b: string | number, direction: SortDirection) {
   const order = direction === 'asc' ? 1 : -1
   if (typeof a === 'number' && typeof b === 'number') {
@@ -42,7 +59,7 @@ function compareValues(a: string | number, b: string | number, direction: SortDi
 
 export default function RunHistoryView() {
   const runHistory = useGetRunHistoryQuery()
-  const [sortKey, setSortKey] = useState<SortKey>('runId')
+  const [sortKey, setSortKey] = useState<SortKey>('createdAt')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
 
   const rows = useMemo(() => {
@@ -50,6 +67,9 @@ export default function RunHistoryView() {
     items.sort((left, right) => {
       if (sortKey === 'runId') {
         return compareValues(left.runId, right.runId, sortDirection)
+      }
+      if (sortKey === 'createdAt') {
+        return compareValues(left.createdAt ?? '', right.createdAt ?? '', sortDirection)
       }
       if (sortKey === 'runner') {
         return compareValues(left.runner, right.runner, sortDirection)
@@ -66,7 +86,11 @@ export default function RunHistoryView() {
   }, [runHistory.data?.items, sortDirection, sortKey])
 
   const setSort = (key: SortKey) => {
-    setSortDirection((direction) => (sortKey === key ? (direction === 'asc' ? 'desc' : 'asc') : key === 'duration' ? 'desc' : 'asc'))
+    setSortDirection((direction) => (
+      sortKey === key
+        ? (direction === 'asc' ? 'desc' : 'asc')
+        : (key === 'duration' || key === 'createdAt' ? 'desc' : 'asc')
+    ))
     setSortKey(key)
   }
 
@@ -95,16 +119,20 @@ export default function RunHistoryView() {
         <div className="overflow-x-auto">
           <table className="w-full table-fixed divide-y divide-zinc-200 text-sm dark:divide-white/10">
             <colgroup>
-              <col className="w-[19%]" />
+              <col className="w-[16%]" />
+              <col className="w-[16%]" />
+              <col className="w-[9%]" />
+              <col className="w-[30%]" />
               <col className="w-[10%]" />
-              <col className="w-[36%]" />
-              <col className="w-[12%]" />
-              <col className="w-[23%]" />
+              <col className="w-[19%]" />
             </colgroup>
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                 <th className="px-3 py-3">
                   <button type="button" onClick={() => setSort('runId')} className="inline-flex items-center gap-1 font-semibold">Run ID {renderSortIcon('runId')}</button>
+                </th>
+                <th className="px-3 py-3">
+                  <button type="button" onClick={() => setSort('createdAt')} className="inline-flex items-center gap-1 font-semibold">Created {renderSortIcon('createdAt')}</button>
                 </th>
                 <th className="px-3 py-3">
                   <button type="button" onClick={() => setSort('runner')} className="inline-flex items-center gap-1 font-semibold">Runner {renderSortIcon('runner')}</button>
@@ -124,6 +152,7 @@ export default function RunHistoryView() {
               {rows.map((row) => (
                 <tr key={row.runId} className="align-top">
                   <td className="px-3 py-3 font-mono text-xs text-zinc-800 dark:text-zinc-100">{row.runId}</td>
+                  <td className="px-3 py-3 text-xs text-zinc-700 dark:text-zinc-200">{formatCreatedAt(row.createdAt)}</td>
                   <td className="px-3 py-3 uppercase text-zinc-700 dark:text-zinc-200">{row.runner}</td>
                   <td className="px-3 py-3 font-mono text-xs text-zinc-600 dark:text-zinc-300 break-words whitespace-normal">{formatParams(row.params)}</td>
                   <td className="px-3 py-3">
