@@ -132,14 +132,23 @@ async function dispatch(input: WorkflowInput) {
 
   const commands = [
     'set -eu',
+    'echo STEP_01_MKDIR_RUN',
     `mkdir -p /opt/kernel-bench/runs/${input.runId}`,
+    'echo STEP_02_CD_RUN',
     `cd /opt/kernel-bench/runs/${input.runId}`,
+    'echo STEP_03_DOWNLOAD_SOURCE',
     `aws s3 cp s3://${ARTIFACT_BUCKET_NAME}/${SOURCE_ARCHIVE_KEY} source.tar.gz`,
+    'echo STEP_04_MKDIR_WORKSPACE',
     'mkdir -p workspace',
+    'echo STEP_05_TAR_EXTRACT',
     'tar --warning=no-unknown-keyword -xzf source.tar.gz -C workspace',
+    'echo STEP_06_CD_WORKSPACE',
     'cd workspace',
+    'echo STEP_07_VERIFY_SCRIPT',
     'test -f ./infrastructure/scripts/remote_kernel_benchmark.sh',
+    'echo STEP_08_CHMOD_SCRIPT',
     'chmod +x ./infrastructure/scripts/remote_kernel_benchmark.sh',
+    'echo STEP_09_RUN_BENCHMARK_SCRIPT',
     `bash ./infrastructure/scripts/remote_kernel_benchmark.sh '${input.runner}' '${input.benchmark}' '${paramsB64}' '${input.runId}' '${ARTIFACT_BUCKET_NAME}' '${input.s3Prefix}' '${launchTimingB64}'`,
   ]
 

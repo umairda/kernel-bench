@@ -6,6 +6,7 @@ import * as cr from 'aws-cdk-lib/custom-resources';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as events from 'aws-cdk-lib/aws-events';
@@ -17,6 +18,7 @@ import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as sfnTasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
+import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as path from 'path';
 
 export interface KernelBenchStackProps extends cdk.StackProps {
@@ -60,10 +62,15 @@ export class KernelBenchStack extends cdk.Stack {
       default: '',
       description: 'Optional custom domain name for CloudFront (for example: kernel-bench.com).',
     });
-    const cloudFrontCertificateArn = new cdk.CfnParameter(this, 'KernelBench-CloudFrontCertificateArn', {
+    const cloudFrontHostedZoneId = new cdk.CfnParameter(this, 'KernelBench-CloudFrontHostedZoneId', {
       type: 'String',
       default: '',
-      description: 'Optional ACM certificate ARN in us-east-1 used with KernelBench-CloudFrontDomainName.',
+      description: 'Optional Route53 hosted zone ID for KernelBench-CloudFrontDomainName (for example: Z123ABC...).',
+    });
+    const cloudFrontHostedZoneName = new cdk.CfnParameter(this, 'KernelBench-CloudFrontHostedZoneName', {
+      type: 'String',
+      default: '',
+      description: 'Optional Route53 hosted zone name for KernelBench-CloudFrontDomainName (for example: kernel-bench.com).',
     });
 
     const githubOidcProviderArn = `arn:aws:iam::${account}:oidc-provider/token.actions.githubusercontent.com`;
@@ -499,8 +506,25 @@ export class KernelBenchStack extends cdk.Stack {
       ],
     });
     const hasCustomCloudFrontDomain = new cdk.CfnCondition(this, 'KernelBench-HasCustomCloudFrontDomain', {
-      expression: cdk.Fn.conditionNot(cdk.Fn.conditionEquals(cloudFrontDomainName.valueAsString, '')),
+      expression: cdk.Fn.conditionAnd(
+        cdk.Fn.conditionNot(cdk.Fn.conditionEquals(cloudFrontDomainName.valueAsString, '')),
+        cdk.Fn.conditionNot(cdk.Fn.conditionEquals(cloudFrontHostedZoneId.valueAsString, '')),
+        cdk.Fn.conditionNot(cdk.Fn.conditionEquals(cloudFrontHostedZoneName.valueAsString, '')),
+      ),
     });
+
+    const customDomainCertificate = new acm.CfnCertificate(this, 'KernelBench-CloudFrontCertificate', {
+      domainName: cloudFrontDomainName.valueAsString,
+      validationMethod: 'DNS',
+      domainValidationOptions: [
+        {
+          domainName: cloudFrontDomainName.valueAsString,
+          hostedZoneId: cloudFrontHostedZoneId.valueAsString,
+        },
+      ],
+    });
+    customDomainCertificate.cfnOptions.condition = hasCustomCloudFrontDomain
+
     const cfnDistribution = distribution.node.defaultChild as cloudfront.CfnDistribution
     cfnDistribution.addPropertyOverride(
       'DistributionConfig.Aliases',
@@ -515,13 +539,36 @@ export class KernelBenchStack extends cdk.Stack {
       cdk.Fn.conditionIf(
         hasCustomCloudFrontDomain.logicalId,
         {
-          AcmCertificateArn: cloudFrontCertificateArn.valueAsString,
+          AcmCertificateArn: customDomainCertificate.ref,
           SslSupportMethod: 'sni-only',
           MinimumProtocolVersion: 'TLSv1.2_2021',
         },
         { CloudFrontDefaultCertificate: true },
       ),
     )
+    cfnDistribution.addDependency(customDomainCertificate)
+
+    const customDomainARecord = new route53.CfnRecordSet(this, 'KernelBench-CloudFrontARecord', {
+      hostedZoneId: cloudFrontHostedZoneId.valueAsString,
+      name: cloudFrontDomainName.valueAsString,
+      type: 'A',
+      aliasTarget: {
+        dnsName: distribution.distributionDomainName,
+        hostedZoneId: 'Z2FDTNDATAQYW2',
+      },
+    })
+    customDomainARecord.cfnOptions.condition = hasCustomCloudFrontDomain
+
+    const customDomainAaaaRecord = new route53.CfnRecordSet(this, 'KernelBench-CloudFrontAaaaRecord', {
+      hostedZoneId: cloudFrontHostedZoneId.valueAsString,
+      name: cloudFrontDomainName.valueAsString,
+      type: 'AAAA',
+      aliasTarget: {
+        dnsName: distribution.distributionDomainName,
+        hostedZoneId: 'Z2FDTNDATAQYW2',
+      },
+    })
+    customDomainAaaaRecord.cfnOptions.condition = hasCustomCloudFrontDomain
 
     new cdk.CfnOutput(this, 'KernelBench-ApiBaseUrl', {
       value: api.url ?? 'unknown',
