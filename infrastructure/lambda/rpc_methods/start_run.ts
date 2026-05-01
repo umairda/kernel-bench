@@ -12,6 +12,7 @@ import {
   asObject,
   validateBenchmarkParams,
   acquireRunnerLock,
+  getState,
   putMetric,
 } from './shared'
 import { sfn, ddb } from '../aws'
@@ -41,6 +42,15 @@ export async function rpcStartRun(rawParams: unknown) {
   const timestamp = runTimestamp()
   const s3Prefix = makeS3Prefix(benchmark, normalizedParams, timestamp, runner)
   const instanceId = runner === 'cpu' ? CPU_INSTANCE_ID : GPU_INSTANCE_ID
+
+  const instanceState = await getState(instanceId)
+  if (instanceState !== 'stopped') {
+    throw new JsonRpcError(
+      -32010,
+      `${runner} instance is not ready for a new run`,
+      { runner, instanceId, instanceState, reason: `Instance must be stopped before starting a new run (current state: ${instanceState})` },
+    )
+  }
 
   const lock = await acquireRunnerLock(runner, runId)
   if (!lock.ok) {

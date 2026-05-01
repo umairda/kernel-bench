@@ -423,6 +423,13 @@ export class KernelBenchStack extends cdk.Stack {
 
     rpcFn.addEnvironment('RUN_WORKFLOW_STATE_MACHINE_ARN', runWorkflowStateMachine.stateMachineArn);
     runWorkflowStateMachine.grantStartExecution(rpcFn);
+    runWorkflowStateMachine.grantRead(rpcFn);
+    rpcFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['states:StopExecution'],
+        resources: [`arn:aws:states:${region}:${account}:execution:KernelBench-run-workflow-${region}:*`],
+      }),
+    );
 
     new events.Rule(this, 'KernelBench-StaleRunSweepRule', {
       schedule: events.Schedule.rate(cdk.Duration.minutes(10)),

@@ -1,8 +1,9 @@
 import { GetObjectCommand } from '@aws-sdk/client-s3'
 import { DescribeInstancesCommand, StopInstancesCommand } from '@aws-sdk/client-ec2'
-import { GetCommandInvocationCommand } from '@aws-sdk/client-ssm'
+import { CancelCommandCommand, GetCommandInvocationCommand } from '@aws-sdk/client-ssm'
+import { DescribeExecutionCommand, StopExecutionCommand } from '@aws-sdk/client-sfn'
 import { DeleteCommand, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
-import { ddb, ec2, putMetric, s3, ssm } from '../aws'
+import { ddb, ec2, putMetric, s3, sfn, ssm } from '../aws'
 import { JsonRpcError, TERMINAL_STATUSES, mapSsmStatus, normalizePerformance, nowIso, publicRunView } from '../common'
 import { queryHistory, writeHistoryRecord } from '../history'
 
@@ -16,6 +17,7 @@ export const CPU_INSTANCE_ID = process.env.CPU_INSTANCE_ID!
 export const GPU_INSTANCE_ID = process.env.GPU_INSTANCE_ID!
 export const LOCK_TTL_SECONDS = Number(process.env.RUNNER_LOCK_TTL_SECONDS ?? '7200')
 export const STARTING_STALE_SECONDS = Number(process.env.STARTING_STALE_SECONDS ?? '180')
+const RUN_WORKFLOW_STATE_MACHINE_ARN = process.env.RUN_WORKFLOW_STATE_MACHINE_ARN ?? ''
 
 export function asObject(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -76,6 +78,7 @@ export function createdTooOld(createdAt?: string): boolean {
 }
 
 export async function releaseRunnerLock(runner: string | undefined, runId: string) {
+  await cancelInFlightWorkForRun(runId)
   if (!runner) return
   try {
     await ddb.send(new DeleteCommand({
@@ -84,6 +87,41 @@ export async function releaseRunnerLock(runner: string | undefined, runId: strin
       ConditionExpression: 'ownerRunId = :owner',
       ExpressionAttributeValues: { ':owner': runId },
     }))
+  } catch {}
+}
+
+function executionArnForRun(runId: string): string | undefined {
+  if (!RUN_WORKFLOW_STATE_MACHINE_ARN) return undefined
+  const m = RUN_WORKFLOW_STATE_MACHINE_ARN.match(/^arn:aws:states:([^:]+):([^:]+):stateMachine:(.+)$/)
+  if (!m) return undefined
+  const [, region, account, machineName] = m
+  return `arn:aws:states:${region}:${account}:execution:${machineName}:${runId}`
+}
+
+async function cancelInFlightWorkForRun(runId: string) {
+  const found = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId } }))
+  const item = found.Item as Record<string, any> | undefined
+  if (!item) return
+
+  const commandId = typeof item.commandId === 'string' ? item.commandId : undefined
+  const instanceId = typeof item.instanceId === 'string' ? item.instanceId : undefined
+  if (commandId && instanceId) {
+    try {
+      const inv = await ssm.send(new GetCommandInvocationCommand({ CommandId: commandId, InstanceId: instanceId }))
+      const mapped = mapSsmStatus(inv.Status ?? 'Unknown')
+      if (!TERMINAL_STATUSES.has(mapped)) {
+        await ssm.send(new CancelCommandCommand({ CommandId: commandId, InstanceIds: [instanceId] }))
+      }
+    } catch {}
+  }
+
+  const executionArn = executionArnForRun(runId)
+  if (!executionArn) return
+  try {
+    const exec = await sfn.send(new DescribeExecutionCommand({ executionArn }))
+    if (exec.status && !['SUCCEEDED', 'FAILED', 'TIMED_OUT', 'ABORTED'].includes(exec.status)) {
+      await sfn.send(new StopExecutionCommand({ executionArn, cause: `Runner lock released for run ${runId}` }))
+    }
   } catch {}
 }
 
