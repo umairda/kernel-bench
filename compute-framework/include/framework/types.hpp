@@ -31,7 +31,8 @@ enum class StatusCode
     InvalidArgument,
     OutOfMemory,
     NotImplemented,
-    BackendUnavailable
+    BackendUnavailable,
+    BackendBusy
 };
 
 using IndexType = std::size_t;

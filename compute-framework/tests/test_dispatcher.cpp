@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 #include "framework/runtime.hpp"
+#include <chrono>
+#include <thread>
 
 TEST(Dispatcher, ProbeBackendCapabilitiesAlwaysHasCpu)
 {
@@ -333,4 +335,56 @@ TEST(Dispatcher, ConvolutionDispatchesToCpu)
     EXPECT_EQ(status, StatusCode::Success);
     EXPECT_EQ(result.backend_used, Backend::CPU);
     EXPECT_FLOAT_EQ(out[0], 45.0f);
+}
+
+TEST(Dispatcher, RejectsSecondCpuRunWhenCpuAlreadyRunning)
+{
+    RuntimeContext ctx{
+        .capabilities = {
+            .gpu_available = false,
+            .cpu_available = true
+        },
+        .config = {
+            .backend_config = {.preferred = Backend::CPU, .allow_fallback = false},
+            .use_pinned_memory = false,
+            .use_async_transfers = false
+        }
+    };
+
+    MatrixMultiplyParams slow_params{
+        .A_shape = MatrixShape{700, 700},
+        .B_shape = MatrixShape{700, 700},
+        .output_shape = MatrixShape{700, 700}
+    };
+
+    std::vector<float> a(700 * 700, 1.0f);
+    std::vector<float> b(700 * 700, 1.0f);
+    std::vector<float> out_slow(700 * 700, 0.0f);
+    Result slow_result{};
+
+    std::thread slow_thread([&]()
+                            { (void)dispatch_matrix_multiply(ctx, slow_params, a, b, out_slow, slow_result); });
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!is_backend_running(Backend::CPU) && std::chrono::steady_clock::now() < deadline)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    VectorOpParams fast_params{
+        .length = 3,
+        .op_type = VectorOperation::Add
+    };
+    std::vector<float> v1{1.0f, 2.0f, 3.0f};
+    std::vector<float> v2{4.0f, 5.0f, 6.0f};
+    std::vector<float> out_fast(3, 0.0f);
+    Result fast_result{};
+
+    const StatusCode fast_status = dispatch_vector_operation(ctx, fast_params, v1, v2, out_fast, fast_result);
+
+    slow_thread.join();
+
+    EXPECT_EQ(fast_status, StatusCode::BackendBusy);
+    EXPECT_EQ(fast_result.status, StatusCode::BackendBusy);
+    EXPECT_EQ(fast_result.backend_used, Backend::None);
 }

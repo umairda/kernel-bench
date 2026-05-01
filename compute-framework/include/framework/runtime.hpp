@@ -19,6 +19,9 @@ StatusCode probe_backend_capabilities(BackendCapabilities &out_caps);
 // Build a ready-to-use runtime context from config + detected capabilities.
 StatusCode initialize_runtime(const ExecutionConfig &config, RuntimeContext &out_ctx);
 
+// Query whether a backend is currently executing a dispatched operation.
+bool is_backend_running(Backend backend);
+
 // ----- Backend Selection -----
 
 // Pick backend for a specific operation, considering config + capabilities.

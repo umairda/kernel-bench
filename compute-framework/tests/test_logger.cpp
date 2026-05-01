@@ -26,7 +26,7 @@ TEST(Logger, PrintOperationResultSuccessIncludesOutput)
 {
     std::ostringstream oss;
     const std::vector<float> out{5.0f, 7.0f, 9.0f};
-    print_operation_result(oss, StatusCode::Success, out);
+    print_operation_result(oss, StatusCode::Success, out, true);
 
     const std::string s = oss.str();
     EXPECT_NE(s.find("Success"), std::string::npos);

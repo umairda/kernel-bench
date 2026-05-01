@@ -3,9 +3,65 @@
 #include "framework/cpu_ops.hpp"
 #include "framework/gpu_ops.hpp"
 #include "framework/timer.hpp"
+#include <atomic>
 #if defined(GPU_FRAMEWORK_ENABLE_CUDA)
 #include "framework/cuda_utils.cuh"
 #endif
+
+namespace
+{
+std::atomic<bool> g_cpu_running{false};
+std::atomic<bool> g_gpu_running{false};
+
+class BackendRunGuard
+{
+public:
+    explicit BackendRunGuard(const Backend backend)
+    {
+        switch (backend)
+        {
+        case Backend::CPU:
+            acquired_ = !g_cpu_running.exchange(true);
+            backend_ = Backend::CPU;
+            break;
+        case Backend::GPU:
+            acquired_ = !g_gpu_running.exchange(true);
+            backend_ = Backend::GPU;
+            break;
+        default:
+            acquired_ = false;
+            backend_ = Backend::None;
+            break;
+        }
+    }
+
+    ~BackendRunGuard()
+    {
+        if (!acquired_)
+        {
+            return;
+        }
+
+        if (backend_ == Backend::CPU)
+        {
+            g_cpu_running.store(false);
+        }
+        else if (backend_ == Backend::GPU)
+        {
+            g_gpu_running.store(false);
+        }
+    }
+
+    bool acquired() const
+    {
+        return acquired_;
+    }
+
+private:
+    bool acquired_ = false;
+    Backend backend_ = Backend::None;
+};
+} // namespace
 
 StatusCode probe_backend_capabilities(BackendCapabilities &out_caps)
 {
@@ -32,6 +88,19 @@ StatusCode initialize_runtime(const ExecutionConfig &config, RuntimeContext &out
 
     out_ctx.capabilities = caps;
     return StatusCode::Success;
+}
+
+bool is_backend_running(const Backend backend)
+{
+    if (backend == Backend::CPU)
+    {
+        return g_cpu_running.load();
+    }
+    if (backend == Backend::GPU)
+    {
+        return g_gpu_running.load();
+    }
+    return false;
 }
 
 Backend select_backend(const RuntimeContext &ctx)
@@ -92,6 +161,16 @@ StatusCode dispatch_vector_operation(const RuntimeContext &ctx, const VectorOpPa
     }
 
     Backend chosen = select_backend(ctx);
+    BackendRunGuard guard(chosen);
+    if (chosen == Backend::CPU || chosen == Backend::GPU)
+    {
+        if (!guard.acquired())
+        {
+            result.status = StatusCode::BackendBusy;
+            result.backend_used = Backend::None;
+            return result.status;
+        }
+    }
 
     Stopwatch stopwatch;
     stopwatch.start();
@@ -139,6 +218,16 @@ StatusCode dispatch_matrix_multiply(
     }
 
     const Backend chosen = select_backend(ctx);
+    BackendRunGuard guard(chosen);
+    if (chosen == Backend::CPU || chosen == Backend::GPU)
+    {
+        if (!guard.acquired())
+        {
+            result.status = StatusCode::BackendBusy;
+            result.backend_used = Backend::None;
+            return result.status;
+        }
+    }
 
     Stopwatch stopwatch;
     stopwatch.start();
@@ -184,6 +273,16 @@ StatusCode dispatch_convolution(
     }
 
     const Backend chosen = select_backend(ctx);
+    BackendRunGuard guard(chosen);
+    if (chosen == Backend::CPU || chosen == Backend::GPU)
+    {
+        if (!guard.acquired())
+        {
+            result.status = StatusCode::BackendBusy;
+            result.backend_used = Backend::None;
+            return result.status;
+        }
+    }
 
     Stopwatch stopwatch;
     stopwatch.start();

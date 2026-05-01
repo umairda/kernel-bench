@@ -106,6 +106,8 @@ std::string to_string(const StatusCode status)
         return "NotImplemented";
     case StatusCode::BackendUnavailable:
         return "BackendUnavailable";
+    case StatusCode::BackendBusy:
+        return "BackendBusy";
     default:
         return "UnknownStatus(" + std::to_string(static_cast<int>(status)) + ")";
     }
