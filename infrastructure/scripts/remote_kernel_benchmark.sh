@@ -126,8 +126,10 @@ ensure_cuda_toolkit_for_gpu() {
   elif command -v apt-get >/dev/null 2>&1; then
     DEBIAN_FRONTEND=noninteractive apt-get update -y
     DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential dkms
+    DEBIAN_FRONTEND=noninteractive apt-get install -y cuda-toolkit-12-6 || \
+      DEBIAN_FRONTEND=noninteractive apt-get install -y nvidia-cuda-toolkit
     if command -v nvidia-smi >/dev/null 2>&1; then
-      return 0
+      :
     fi
   else
     echo "No supported package manager found (expected dnf or apt-get)." >&2
