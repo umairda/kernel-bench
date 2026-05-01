@@ -25,8 +25,21 @@ dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda
 dnf clean all
 dnf makecache
 
+DRIVER_PKG=""
+if dnf list --available nvidia-driver-latest-dkms >/dev/null 2>&1; then
+  DRIVER_PKG="nvidia-driver-latest-dkms"
+elif dnf list --available nvidia-driver >/dev/null 2>&1; then
+  DRIVER_PKG="nvidia-driver"
+elif dnf list --available kmod-nvidia-latest-dkms >/dev/null 2>&1; then
+  DRIVER_PKG="kmod-nvidia-latest-dkms"
+else
+  echo "No supported NVIDIA driver package found in configured repos."
+  dnf list --available '*nvidia*' || true
+  exit 1
+fi
+
 dnf install -y \
-  nvidia-driver-latest-dkms \
+  "${DRIVER_PKG}" \
   cuda-compiler-12-6 \
   cuda-cudart-devel-12-6 \
   cuda-libraries-devel-12-6
