@@ -212,8 +212,6 @@ function App() {
 
   const renderRunTab = () => (
     <div className="space-y-4">
-      <InProgressRunsCard items={inProgressRuns.data?.items ?? []} />
-
       <div className="flex justify-start">
         <SegmentedControl
           value={activeRunTab}
@@ -276,6 +274,8 @@ function App() {
           onGpuStartError={(message) => setConvRuns((s) => ({ ...s, gpuStartError: message }))}
         />
       ) : null}
+
+      <InProgressRunsCard items={inProgressRuns.data?.items ?? []} />
     </div>
   )
 
