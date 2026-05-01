@@ -1,0 +1,54 @@
+name: Build And Upload Source Bundle
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'compute-framework/**'
+      - 'infrastructure/scripts/upload-source.sh'
+      - 'infrastructure/scripts/remote_kernel_benchmark.sh'
+      - '.github/workflows/build-and-upload-source-bundle.yml'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: kernelbench-source-bundle
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+jobs:
+  upload-source-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve artifact bucket output
+        id: outputs
+        run: |
+          BUCKET_NAME=$(aws cloudformation describe-stacks \
+            --stack-name KernelBench-Infrastructure \
+            --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='KernelBenchArtifactBucketName'].OutputValue" \
+            --output text)
+
+          if [ -z "$BUCKET_NAME" ] || [ "$BUCKET_NAME" = "None" ]; then
+            echo "Could not resolve KernelBenchArtifactBucketName from stack outputs" >&2
+            exit 1
+          fi
+
+          echo "artifact_bucket=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build and upload source bundle
+        run: bash ./infrastructure/scripts/upload-source.sh "${{ steps.outputs.outputs.artifact_bucket }}"

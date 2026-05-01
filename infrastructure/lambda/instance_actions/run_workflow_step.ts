@@ -136,7 +136,7 @@ async function dispatch(input: WorkflowInput) {
     `cd /opt/kernel-bench/runs/${input.runId}`,
     `aws s3 cp s3://${ARTIFACT_BUCKET_NAME}/${SOURCE_ARCHIVE_KEY} source.tar.gz`,
     'mkdir -p workspace',
-    'tar -xzf source.tar.gz -C workspace',
+    'tar --warning=no-unknown-keyword -xzf source.tar.gz -C workspace',
     'cd workspace',
     'test -f ./infrastructure/scripts/remote_kernel_benchmark.sh',
     'chmod +x ./infrastructure/scripts/remote_kernel_benchmark.sh',

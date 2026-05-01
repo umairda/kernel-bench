@@ -55,6 +55,16 @@ export class KernelBenchStack extends cdk.Stack {
       default: 'main',
       description: 'Git branch allowed to assume the deploy role.',
     });
+    const cloudFrontDomainName = new cdk.CfnParameter(this, 'KernelBench-CloudFrontDomainName', {
+      type: 'String',
+      default: '',
+      description: 'Optional custom domain name for CloudFront (for example: kernel-bench.com).',
+    });
+    const cloudFrontCertificateArn = new cdk.CfnParameter(this, 'KernelBench-CloudFrontCertificateArn', {
+      type: 'String',
+      default: '',
+      description: 'Optional ACM certificate ARN in us-east-1 used with KernelBench-CloudFrontDomainName.',
+    });
 
     const githubOidcProviderArn = `arn:aws:iam::${account}:oidc-provider/token.actions.githubusercontent.com`;
     const githubOidcProvider = iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(
@@ -488,6 +498,30 @@ export class KernelBenchStack extends cdk.Stack {
         },
       ],
     });
+    const hasCustomCloudFrontDomain = new cdk.CfnCondition(this, 'KernelBench-HasCustomCloudFrontDomain', {
+      expression: cdk.Fn.conditionNot(cdk.Fn.conditionEquals(cloudFrontDomainName.valueAsString, '')),
+    });
+    const cfnDistribution = distribution.node.defaultChild as cloudfront.CfnDistribution
+    cfnDistribution.addPropertyOverride(
+      'DistributionConfig.Aliases',
+      cdk.Fn.conditionIf(
+        hasCustomCloudFrontDomain.logicalId,
+        [cloudFrontDomainName.valueAsString],
+        cdk.Aws.NO_VALUE,
+      ),
+    )
+    cfnDistribution.addPropertyOverride(
+      'DistributionConfig.ViewerCertificate',
+      cdk.Fn.conditionIf(
+        hasCustomCloudFrontDomain.logicalId,
+        {
+          AcmCertificateArn: cloudFrontCertificateArn.valueAsString,
+          SslSupportMethod: 'sni-only',
+          MinimumProtocolVersion: 'TLSv1.2_2021',
+        },
+        { CloudFrontDefaultCertificate: true },
+      ),
+    )
 
     new cdk.CfnOutput(this, 'KernelBench-ApiBaseUrl', {
       value: api.url ?? 'unknown',

@@ -34,6 +34,21 @@ Operational effect:
 
 - frontend-only changes can ship without touching the infrastructure stack
 
+## build-and-upload-source-bundle.yml
+
+Purpose:
+
+- package the current source tree into `kernel-bench/source/latest.tar.gz`
+- upload it to the artifact bucket used by runner instances
+
+Trigger:
+
+- on `main` pushes that change:
+  - `compute-framework/**`
+  - `infrastructure/scripts/upload-source.sh`
+  - `infrastructure/scripts/remote_kernel_benchmark.sh`
+- manual `workflow_dispatch`
+
 ## Required AWS/Repo Inputs
 
 Examples used by the workflows:

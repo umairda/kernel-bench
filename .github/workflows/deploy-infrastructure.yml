@@ -55,12 +55,24 @@ jobs:
           ORIGIN_VERIFY_SECRET="$(printf %s "${{ secrets.KERNELBENCH_ORIGIN_VERIFY_SECRET || 'KernelBench-ChangeMe' }}" | tr -d '\r\n')"
           GITHUB_REPO="$(printf %s "${{ vars.KERNELBENCH_GITHUB_REPO || 'owner/repo' }}" | tr -d '\r\n')"
           GITHUB_BRANCH="$(printf %s "${{ vars.KERNELBENCH_GITHUB_BRANCH || 'main' }}" | tr -d '\r\n')"
+          CF_DOMAIN_NAME="$(printf %s "${{ vars.KERNELBENCH_CLOUDFRONT_DOMAIN_NAME || '' }}" | tr -d '\r\n')"
+          CF_CERT_ARN="$(printf %s "${{ vars.KERNELBENCH_CLOUDFRONT_CERT_ARN || secrets.KERNELBENCH_CLOUDFRONT_CERT_ARN || '' }}" | tr -d '\r\n')"
 
-          npx cdk deploy \
+          DEPLOY_CMD=(npx cdk deploy \
             --require-approval never \
             --parameters "KernelBenchOriginVerifySecret=${ORIGIN_VERIFY_SECRET}" \
             --parameters "KernelBenchGitHubRepo=${GITHUB_REPO}" \
-            --parameters "KernelBenchGitHubBranch=${GITHUB_BRANCH}"
+            --parameters "KernelBenchGitHubBranch=${GITHUB_BRANCH}")
+
+          if [ -n "$CF_DOMAIN_NAME" ]; then
+            DEPLOY_CMD+=(--parameters "KernelBenchCloudFrontDomainName=${CF_DOMAIN_NAME}")
+          fi
+
+          if [ -n "$CF_CERT_ARN" ]; then
+            DEPLOY_CMD+=(--parameters "KernelBenchCloudFrontCertificateArn=${CF_CERT_ARN}")
+          fi
+
+          "${DEPLOY_CMD[@]}"
 
       - name: Resolve artifact bucket output
         id: outputs

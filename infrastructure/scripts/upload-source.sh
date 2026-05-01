@@ -60,6 +60,7 @@ trap cleanup EXIT
 
 echo "Packaging source tree from: ${ROOT_DIR}"
 COPYFILE_DISABLE=1 tar \
+  --no-xattrs \
   --exclude='.git' \
   --exclude='build' \
   --exclude='compute-framework/build' \
@@ -114,7 +115,7 @@ cat > "${BUNDLE_DIR}/manifest.json" <<EOF
 }
 EOF
 
-COPYFILE_DISABLE=1 tar --exclude='._*' -czf "${FINAL_ARCHIVE}" -C "${STAGING_DIR}" .
+COPYFILE_DISABLE=1 tar --no-xattrs --exclude='._*' -czf "${FINAL_ARCHIVE}" -C "${STAGING_DIR}" .
 
 echo "Uploading bundle archive to s3://${BUCKET_NAME}/${S3_KEY}"
 aws s3 cp "${FINAL_ARCHIVE}" "s3://${BUCKET_NAME}/${S3_KEY}"
