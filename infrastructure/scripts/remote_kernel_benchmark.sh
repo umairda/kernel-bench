@@ -39,6 +39,8 @@ WORKSPACE_ROOT="$(pwd)"
 SOURCE_ROOT="${WORKSPACE_ROOT}"
 BUNDLE_DIR="${SOURCE_ROOT}/.kernel-bench-bundle"
 CACHE_ROOT="/opt/kernel-bench/cache"
+CUDA_NVCC_PATH=""
+CUDA_ROOT=""
 
 now_ms() {
   date +%s%3N
@@ -109,6 +111,8 @@ ensure_cuda_toolkit_for_gpu() {
   fi
 
   if command -v nvcc >/dev/null 2>&1; then
+    CUDA_NVCC_PATH="$(command -v nvcc)"
+    CUDA_ROOT="$(dirname "$(dirname "${CUDA_NVCC_PATH}")")"
     return 0
   fi
 
@@ -119,12 +123,6 @@ ensure_cuda_toolkit_for_gpu() {
     dnf makecache
     dnf install -y cuda-compiler-12-6 cuda-cudart-devel-12-6 cuda-libraries-devel-12-6
 
-    if [[ -f /usr/local/cuda-12.6/bin/nvcc ]]; then
-      ln -sf /usr/local/cuda-12.6/bin/nvcc /usr/local/bin/nvcc || true
-      export PATH="/usr/local/cuda-12.6/bin:${PATH}"
-      export CUDAToolkit_ROOT="/usr/local/cuda-12.6"
-      return 0
-    fi
   elif command -v apt-get >/dev/null 2>&1; then
     DEBIAN_FRONTEND=noninteractive apt-get update -y
     DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential dkms
@@ -134,6 +132,24 @@ ensure_cuda_toolkit_for_gpu() {
   else
     echo "No supported package manager found (expected dnf or apt-get)." >&2
     exit 2
+  fi
+
+  if command -v nvcc >/dev/null 2>&1; then
+    CUDA_NVCC_PATH="$(command -v nvcc)"
+    CUDA_ROOT="$(dirname "$(dirname "${CUDA_NVCC_PATH}")")"
+    return 0
+  fi
+
+  for candidate in /usr/local/cuda/bin/nvcc /usr/local/cuda-*/bin/nvcc /opt/cuda/bin/nvcc; do
+    if [[ -x "${candidate}" ]]; then
+      CUDA_NVCC_PATH="${candidate}"
+      CUDA_ROOT="$(dirname "$(dirname "${CUDA_NVCC_PATH}")")"
+      break
+    fi
+  done
+
+  if [[ -n "${CUDA_NVCC_PATH}" && -x "${CUDA_NVCC_PATH}" ]]; then
+    return 0
   fi
 
   if command -v nvcc >/dev/null 2>&1; then
@@ -147,6 +163,11 @@ ensure_cuda_toolkit_for_gpu() {
 ensure_cmake
 ensure_cuda_toolkit_for_gpu
 
+if [[ "${RUNNER}" == "gpu" ]]; then
+  export PATH="$(dirname "${CUDA_NVCC_PATH}"):${PATH}"
+  export CUDAToolkit_ROOT="${CUDA_ROOT}"
+fi
+
 if [[ -x "${PREBUILT_BIN}" ]]; then
   COMPUTE_BIN="${PREBUILT_BIN}"
 else
@@ -156,8 +177,7 @@ else
     mkdir -p "${SOURCE_CACHE_SRC_DIR}"
     cp -R "${SOURCE_ROOT}/." "${SOURCE_CACHE_SRC_DIR}/"
     if [[ "${RUNNER}" == "gpu" ]]; then
-      export PATH="/usr/local/cuda-12.6/bin:${PATH}"
-      cmake -S "${SOURCE_CACHE_SRC_DIR}/compute-framework" -B "${SOURCE_CACHE_BUILD_DIR}" -DENABLE_CUDA=ON -DCUDAToolkit_ROOT=/usr/local/cuda-12.6 || \
+      cmake -S "${SOURCE_CACHE_SRC_DIR}/compute-framework" -B "${SOURCE_CACHE_BUILD_DIR}" -DENABLE_CUDA=ON -DCUDAToolkit_ROOT="${CUDAToolkit_ROOT}" || \
         cmake -S "${SOURCE_CACHE_SRC_DIR}/compute-framework" -B "${SOURCE_CACHE_BUILD_DIR}"
     else
       cmake -S "${SOURCE_CACHE_SRC_DIR}/compute-framework" -B "${SOURCE_CACHE_BUILD_DIR}"
