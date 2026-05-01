@@ -522,8 +522,6 @@ export class KernelBenchStack extends cdk.Stack {
       installLatestAwsSdk: false,
       timeout: cdk.Duration.minutes(2),
     });
-    const hostedZoneLookupResource = hostedZoneLookup.node.defaultChild as cdk.CfnResource
-    hostedZoneLookupResource.cfnOptions.condition = hasCustomCloudFrontDomain
     const hostedZoneIdPath = hostedZoneLookup.getResponseField('HostedZones.0.Id')
     const hostedZoneId = cdk.Fn.select(2, cdk.Fn.split('/', hostedZoneIdPath))
 
