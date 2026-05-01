@@ -84,14 +84,6 @@ export function isOriginVerified(event: APIGatewayProxyEventV2): boolean {
   const supplied = headers['x-kernelbench-origin'] ?? headers['X-Kernelbench-Origin']
   if (expected && supplied === expected) return true
 
-  const allowLocalDevOrigin = (process.env.ALLOW_LOCAL_DEV_ORIGIN ?? 'false').toLowerCase() === 'true'
-  if (allowLocalDevOrigin) {
-    const origin = headers.origin ?? headers.Origin
-    if (origin === 'http://localhost:5173') {
-      return true
-    }
-  }
-
   return !expected
 }
 

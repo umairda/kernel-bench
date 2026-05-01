@@ -41,12 +41,6 @@ export class KernelBenchStack extends cdk.Stack {
       default: 'KernelBench-ChangeMe',
       description: 'Shared secret header value CloudFront sends to API origin.',
     });
-    const allowLocalDevOrigin = new cdk.CfnParameter(this, 'KernelBench-AllowLocalDevOrigin', {
-      type: 'String',
-      default: 'false',
-      allowedValues: ['true', 'false'],
-      description: 'Allow JSON-RPC requests directly from http://localhost:5173 for local development.',
-    });
     const githubRepo = new cdk.CfnParameter(this, 'KernelBench-GitHubRepo', {
       type: 'String',
       default: 'owner/repo',
@@ -289,7 +283,6 @@ export class KernelBenchStack extends cdk.Stack {
         GPU_INSTANCE_ID: gpuRunner.instanceId,
         SOURCE_ARCHIVE_KEY: props.sourceArchiveKey,
         ORIGIN_VERIFY_SECRET: originVerifySecret.valueAsString,
-        ALLOW_LOCAL_DEV_ORIGIN: allowLocalDevOrigin.valueAsString,
         RUNNER_LOCK_TTL_SECONDS: '7200',
         STARTING_STALE_SECONDS: '900',
       },

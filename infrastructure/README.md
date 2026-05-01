@@ -134,9 +134,6 @@ Default SSM parameter:
 - CloudFront fronts both frontend and API traffic.
 - CloudFront injects `x-kernelbench-origin` when proxying to the API origin.
 - The JSON-RPC Lambda verifies that secret header.
-- Optional local override:
-  - `KernelBenchAllowLocalDevOrigin=true`
-  - allows `Origin: http://localhost:5173`
 - Frontend bucket is private behind CloudFront OAC.
 - EC2 access is through SSM; SSH is optional and CIDR-restricted.
 
