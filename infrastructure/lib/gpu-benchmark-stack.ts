@@ -546,8 +546,6 @@ export class KernelBenchStack extends cdk.Stack {
         { CloudFrontDefaultCertificate: true },
       ),
     )
-    cfnDistribution.addDependency(customDomainCertificate)
-
     const customDomainARecord = new route53.CfnRecordSet(this, 'KernelBench-CloudFrontARecord', {
       hostedZoneId: cloudFrontHostedZoneId.valueAsString,
       name: cloudFrontDomainName.valueAsString,
