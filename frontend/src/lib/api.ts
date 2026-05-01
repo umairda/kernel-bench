@@ -64,6 +64,8 @@ export type RunRecord = {
   }
 }
 
+export type RunHistoryRow = RunRecord
+
 export type VectorHistoryPoint = {
   runId: string
   runner: Runner
@@ -132,6 +134,7 @@ export const queryKeys = {
   vectorHistory: (runner: Runner | 'all') => ['history', 'vector', runner] as const,
   matmulHistory: (runner: Runner | 'all') => ['history', 'matmul', runner] as const,
   convolutionHistory: (runner: Runner | 'all') => ['history', 'convolution', runner] as const,
+  runHistory: () => ['history', 'runs'] as const,
 }
 
 async function rpc<T>(method: string, params?: unknown): Promise<T> {
@@ -200,6 +203,10 @@ export function getMatmulHistory(runner: Runner | 'all' = 'all') {
 
 export function getConvolutionHistory(runner: Runner | 'all' = 'all') {
   return rpc<{ items: ConvolutionHistoryPoint[] }>('historyConvolution', { runner })
+}
+
+export function getRunHistory() {
+  return rpc<{ items: RunHistoryRow[] }>('runHistory')
 }
 
 async function startRunWithRecovery(payload: StartRunRequest) {
@@ -278,5 +285,13 @@ export function useGetConvolutionHistoryQuery(runner: Runner | 'all' = 'all') {
   return useQuery({
     queryKey: queryKeys.convolutionHistory(runner),
     queryFn: () => getConvolutionHistory(runner),
+  })
+}
+
+export function useGetRunHistoryQuery() {
+  return useQuery({
+    queryKey: queryKeys.runHistory(),
+    queryFn: getRunHistory,
+    refetchInterval: 5000,
   })
 }

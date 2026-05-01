@@ -24,8 +24,9 @@ type CompareRunState = {
 
 type Theme = 'light' | 'dark'
 type BenchmarkTab = 'vector' | 'matmul' | 'conv'
-type AppTab = 'run' | 'historical'
+type AppTab = 'run' | 'performance' | 'history'
 const HistoricalView = lazy(() => import('./HistoricalView'))
+const RunHistoryView = lazy(() => import('./RunHistoryView'))
 
 const initialCompareState: CompareRunState = {
   cpuRunId: null,
@@ -109,21 +110,27 @@ function App() {
     const convCpu = latestByKey.get('convolution:cpu')?.runId ?? null
     const convGpu = latestByKey.get('convolution:gpu')?.runId ?? null
 
-    setVectorRuns((s) => ({
+    setVectorRuns((s) => (vectorCpu || vectorGpu ? {
       ...s,
-      cpuRunId: s.cpuRunId ?? vectorCpu,
-      gpuRunId: s.gpuRunId ?? vectorGpu,
-    }))
-    setMatmulRuns((s) => ({
+      cpuRunId: vectorCpu,
+      gpuRunId: vectorGpu,
+      cpuStartError: null,
+      gpuStartError: null,
+    } : s))
+    setMatmulRuns((s) => (matmulCpu || matmulGpu ? {
       ...s,
-      cpuRunId: s.cpuRunId ?? matmulCpu,
-      gpuRunId: s.gpuRunId ?? matmulGpu,
-    }))
-    setConvRuns((s) => ({
+      cpuRunId: matmulCpu,
+      gpuRunId: matmulGpu,
+      cpuStartError: null,
+      gpuStartError: null,
+    } : s))
+    setConvRuns((s) => (convCpu || convGpu ? {
       ...s,
-      cpuRunId: s.cpuRunId ?? convCpu,
-      gpuRunId: s.gpuRunId ?? convGpu,
-    }))
+      cpuRunId: convCpu,
+      gpuRunId: convGpu,
+      cpuStartError: null,
+      gpuStartError: null,
+    } : s))
   }, [inProgressRuns.data?.items])
 
   useEffect(() => {
@@ -239,27 +246,42 @@ function App() {
         </header>
 
         <div className="rounded-2xl border border-zinc-300/70 bg-white/80 p-2 dark:border-white/10 dark:bg-zinc-900/50">
-          <div className="grid gap-2 md:grid-cols-2">
+          <div className="grid gap-2 md:grid-cols-3">
             <HistoryTabButton active={appTab === 'run'} onClick={() => setAppTab('run')}>Run</HistoryTabButton>
-            <HistoryTabButton active={appTab === 'historical'} onClick={() => setAppTab('historical')}>Historical</HistoryTabButton>
+            <HistoryTabButton active={appTab === 'performance'} onClick={() => setAppTab('performance')}>Performance</HistoryTabButton>
+            <HistoryTabButton active={appTab === 'history'} onClick={() => setAppTab('history')}>History</HistoryTabButton>
           </div>
         </div>
 
-        {appTab === 'run' ? (
-          renderRunTab()
-        ) : (
+        {appTab === 'run' ? renderRunTab() : null}
+
+        {appTab === 'performance' ? (
           <Suspense
             fallback={
               <GlowCard>
                 <div className="flex h-72 items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading historical charts
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading performance charts
                 </div>
               </GlowCard>
             }
           >
             <HistoricalView historyRunner={historyRunner} onRunnerChange={setHistoryRunner} />
           </Suspense>
-        )}
+        ) : null}
+
+        {appTab === 'history' ? (
+          <Suspense
+            fallback={
+              <GlowCard>
+                <div className="flex h-72 items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading run history
+                </div>
+              </GlowCard>
+            }
+          >
+            <RunHistoryView />
+          </Suspense>
+        ) : null}
 
         {isAnyExecuting ? (
           <div className="fixed bottom-6 right-6 inline-flex items-center rounded-full border border-cyan-500/40 bg-white px-4 py-2 text-sm font-semibold text-cyan-800 shadow-lg dark:border-cyan-400/40 dark:bg-zinc-950 dark:text-cyan-100 dark:shadow-none">

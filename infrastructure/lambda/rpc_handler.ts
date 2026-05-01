@@ -6,6 +6,7 @@ import {
   rpcHistoryVector,
   rpcInProgressRuns,
   rpcInstanceStates,
+  rpcRunHistory,
   rpcRunStatus,
   rpcStartRun,
 } from './rpc_methods'
@@ -18,6 +19,7 @@ const METHODS: Record<string, (params: unknown) => Promise<unknown>> = {
   historyVector: rpcHistoryVector,
   historyMatmul: rpcHistoryMatmul,
   historyConvolution: rpcHistoryConvolution,
+  runHistory: rpcRunHistory,
 }
 
 export async function handler(event: APIGatewayProxyEventV2) {

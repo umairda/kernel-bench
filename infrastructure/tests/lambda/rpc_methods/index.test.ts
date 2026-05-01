@@ -10,6 +10,6 @@ describe('rpc_methods/index', () => {
     expect(typeof methods.rpcHistoryVector).toBe('function')
     expect(typeof methods.rpcHistoryMatmul).toBe('function')
     expect(typeof methods.rpcHistoryConvolution).toBe('function')
+    expect(typeof methods.rpcRunHistory).toBe('function')
   })
 })
-
