@@ -11,6 +11,7 @@ type HistorySourceRun = {
   runId: string
   benchmark: HistoryBenchmark
   runner: HistoryRunner
+  instanceType?: string
   params: Record<string, number>
   createdAt?: string
   completedAt?: string
@@ -19,6 +20,10 @@ type HistorySourceRun = {
     operationDurations?: Array<{ name: string; durationMs: number }>
     operations?: Array<{ name?: string; operationType?: string; durationMs?: number }>
   }
+}
+
+function fallbackInstanceType(runner: HistoryRunner): string {
+  return runner === 'cpu' ? 'c7i.xlarge' : 'g4dn.xlarge'
 }
 
 function operationLookup(performance?: HistorySourceRun['performance']) {
@@ -61,6 +66,7 @@ export async function writeHistoryRecord(run: HistorySourceRun) {
     runId: run.runId,
     benchmark: run.benchmark,
     runner: run.runner,
+    instanceType: run.instanceType ?? fallbackInstanceType(run.runner),
     createdAt: run.createdAt,
     completedAt: run.completedAt,
     params,

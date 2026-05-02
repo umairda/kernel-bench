@@ -15,6 +15,7 @@ type WorkflowInput = {
   action: 'START_AND_WAIT' | 'DISPATCH' | 'POLL' | 'FINALIZE' | 'FAIL'
   runId: string
   runner: 'cpu' | 'gpu'
+  instanceType?: string
   benchmark: 'vector' | 'matrix-multiplication' | 'convolution'
   params: Record<string, number>
   instanceId: string
@@ -231,6 +232,7 @@ async function finalize(input: WorkflowInput) {
       runId: input.runId,
       benchmark: input.benchmark,
       runner: input.runner,
+      instanceType: input.instanceType,
       params: input.params,
       createdAt: input.createdAt,
       completedAt: now,

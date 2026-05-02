@@ -15,9 +15,15 @@ export const RUNS_TABLE_NAME = process.env.RUNS_TABLE_NAME!
 export const ARTIFACT_BUCKET_NAME = process.env.ARTIFACT_BUCKET_NAME!
 export const CPU_INSTANCE_ID = process.env.CPU_INSTANCE_ID!
 export const GPU_INSTANCE_ID = process.env.GPU_INSTANCE_ID!
+export const CPU_INSTANCE_TYPE = process.env.CPU_INSTANCE_TYPE ?? 'c7i.xlarge'
+export const GPU_INSTANCE_TYPE = process.env.GPU_INSTANCE_TYPE ?? 'g4dn.xlarge'
 export const LOCK_TTL_SECONDS = Number(process.env.RUNNER_LOCK_TTL_SECONDS ?? '7200')
 export const STARTING_STALE_SECONDS = Number(process.env.STARTING_STALE_SECONDS ?? '180')
 const RUN_WORKFLOW_STATE_MACHINE_ARN = process.env.RUN_WORKFLOW_STATE_MACHINE_ARN ?? ''
+
+export function runnerInstanceType(runner: Runner): string {
+  return runner === 'cpu' ? CPU_INSTANCE_TYPE : GPU_INSTANCE_TYPE
+}
 
 export function asObject(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -229,6 +235,7 @@ export async function attachPerformance(item: Record<string, any>): Promise<Reco
       runId: item.runId,
       benchmark: item.benchmark,
       runner: item.runner,
+      instanceType: item.instanceType,
       params: item.params ?? {},
       createdAt: item.createdAt,
       completedAt: item.completedAt,

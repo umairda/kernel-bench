@@ -8,6 +8,8 @@ import { isOriginVerified, makeS3Prefix, nowIso, parseJsonBody, publicRunView, r
 const RUNS_TABLE_NAME = process.env.RUNS_TABLE_NAME!
 const CPU_INSTANCE_ID = process.env.CPU_INSTANCE_ID!
 const GPU_INSTANCE_ID = process.env.GPU_INSTANCE_ID!
+const CPU_INSTANCE_TYPE = process.env.CPU_INSTANCE_TYPE ?? 'c7i.xlarge'
+const GPU_INSTANCE_TYPE = process.env.GPU_INSTANCE_TYPE ?? 'g4dn.xlarge'
 const RUN_WORKFLOW_STATE_MACHINE_ARN = process.env.RUN_WORKFLOW_STATE_MACHINE_ARN!
 const LOCK_TTL_SECONDS = Number(process.env.RUNNER_LOCK_TTL_SECONDS ?? '7200')
 
@@ -60,6 +62,7 @@ export async function handler(event: APIGatewayProxyEventV2) {
     const timestamp = runTimestamp()
     const s3Prefix = makeS3Prefix(benchmark, normalizedParams, timestamp, runner)
     const instanceId = runner === 'cpu' ? CPU_INSTANCE_ID : GPU_INSTANCE_ID
+    const instanceType = runner === 'cpu' ? CPU_INSTANCE_TYPE : GPU_INSTANCE_TYPE
 
     const lock = await acquireRunnerLock(runner, runId)
     if (!lock.ok) {
@@ -74,6 +77,7 @@ export async function handler(event: APIGatewayProxyEventV2) {
       params: normalizedParams,
       status: 'STARTING',
       instanceId,
+      instanceType,
       s3Prefix,
       createdAt,
       updatedAt: createdAt,

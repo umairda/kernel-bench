@@ -14,6 +14,7 @@ import {
   acquireRunnerLock,
   getState,
   putMetric,
+  runnerInstanceType,
 } from './shared'
 import { sfn, ddb } from '../aws'
 
@@ -42,6 +43,7 @@ export async function rpcStartRun(rawParams: unknown) {
   const timestamp = runTimestamp()
   const s3Prefix = makeS3Prefix(benchmark, normalizedParams, timestamp, runner)
   const instanceId = runner === 'cpu' ? CPU_INSTANCE_ID : GPU_INSTANCE_ID
+  const instanceType = runnerInstanceType(runner)
 
   const instanceState = await getState(instanceId)
   if (instanceState !== 'stopped') {
@@ -65,6 +67,7 @@ export async function rpcStartRun(rawParams: unknown) {
     params: normalizedParams,
     status: 'STARTING',
     instanceId,
+    instanceType,
     s3Prefix,
     createdAt,
     updatedAt: createdAt,
