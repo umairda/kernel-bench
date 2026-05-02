@@ -27,6 +27,58 @@ type WorkflowInput = {
   errorMessage?: string
 }
 
+const PROGRESS_PREFIX = 'KERNEL_BENCH_PROGRESS '
+
+function parseNumber(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined
+  const n = Number(value)
+  return Number.isFinite(n) ? n : undefined
+}
+
+function parseProgressLine(line: string): Record<string, any> | undefined {
+  if (!line.startsWith(PROGRESS_PREFIX)) return undefined
+  const body = line.slice(PROGRESS_PREFIX.length)
+  const pairs = [...body.matchAll(/([a-zA-Z_]+)=("[^"]*"|\S+)/g)]
+  if (pairs.length === 0) return undefined
+
+  const fields: Record<string, string> = {}
+  for (const m of pairs) {
+    const key = m[1]
+    let value = m[2]
+    if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1)
+    fields[key] = value
+  }
+
+  return {
+    op: fields.op,
+    backend: fields.backend,
+    status: fields.status,
+    phase: fields.phase,
+    detail: fields.detail,
+    rowsDone: parseNumber(fields.rows_done),
+    totalRows: parseNumber(fields.total_rows),
+    percent: parseNumber(fields.percent),
+    elapsedMs: parseNumber(fields.elapsed_ms),
+    elapsedS: parseNumber(fields.elapsed_s),
+    etaS: parseNumber(fields.eta_s),
+    heartbeat: parseNumber(fields.heartbeat),
+    detailed: parseNumber(fields.detailed),
+    observedAt: nowIso(),
+  }
+}
+
+function extractLatestProgress(standardOutputContent?: string): Record<string, any> | undefined {
+  if (!standardOutputContent) return undefined
+  const lines = standardOutputContent.split('\n')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]?.trim()
+    if (!line) continue
+    const parsed = parseProgressLine(line)
+    if (parsed) return parsed
+  }
+  return undefined
+}
+
 async function releaseRunnerLock(runner: string | undefined, runId: string) {
   if (!runner) return
   try {
@@ -185,12 +237,24 @@ async function poll(input: WorkflowInput) {
   const mapped = mapSsmStatus(inv.Status ?? 'Unknown')
   const responseCode = inv.ResponseCode ?? -1
   const isTerminal = TERMINAL_STATUSES.has(mapped)
+  const latestProgress = extractLatestProgress(inv.StandardOutputContent)
   if (!isTerminal) {
+    const now = nowIso()
+    let updateExpression = 'SET ssmStatus = :ssmStatus, updatedAt = :updatedAt, responseCode = :responseCode'
+    const expressionAttributeValues: Record<string, any> = {
+      ':ssmStatus': inv.Status ?? 'Unknown',
+      ':updatedAt': now,
+      ':responseCode': responseCode,
+    }
+    if (latestProgress) {
+      updateExpression += ', progress = :progress'
+      expressionAttributeValues[':progress'] = latestProgress
+    }
     await ddb.send(new UpdateCommand({
       TableName: RUNS_TABLE_NAME,
       Key: { runId: input.runId },
-      UpdateExpression: 'SET ssmStatus = :ssmStatus, updatedAt = :updatedAt, responseCode = :responseCode',
-      ExpressionAttributeValues: { ':ssmStatus': inv.Status ?? 'Unknown', ':updatedAt': nowIso(), ':responseCode': responseCode },
+      UpdateExpression: updateExpression,
+      ExpressionAttributeValues: expressionAttributeValues,
     }))
   }
   return { ...input, poll: { isTerminal, mappedStatus: mapped, ssmStatus: inv.Status ?? 'Unknown', responseCode } }

@@ -192,9 +192,11 @@ export function RunStatusCard({
               ) : null}
             </div>
           ) : null}
-          {run.status === 'RUNNING' && run.progress ? (
+          {run.progress ? (
             <div className="rounded-md border border-zinc-300 bg-zinc-100 p-3 text-xs dark:border-white/10 dark:bg-zinc-950">
-              <p className="font-semibold text-zinc-700 dark:text-zinc-300">Execution Progress</p>
+              <p className="font-semibold text-zinc-700 dark:text-zinc-300">
+                {run.status === 'RUNNING' ? 'Execution Progress' : 'Last Execution Progress'}
+              </p>
               <p className="mt-1 flex items-center justify-between gap-3">
                 <span>phase</span>
                 <span>{run.progress.phase ?? 'running'}</span>

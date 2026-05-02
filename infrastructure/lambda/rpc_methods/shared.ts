@@ -162,19 +162,45 @@ export async function reconcileWorkflowTerminal(item: Record<string, any>): Prom
 
   if (!mapped) return undefined
 
+  let latestProgress: Record<string, any> | undefined
+  let latestSsmStatus: string | undefined
+  let latestResponseCode: number | undefined
+  if (item.commandId && item.instanceId) {
+    try {
+      const inv = await ssm.send(new GetCommandInvocationCommand({ CommandId: item.commandId, InstanceId: item.instanceId }))
+      latestProgress = extractLatestProgress(inv.StandardOutputContent)
+      latestSsmStatus = inv.Status ?? 'Unknown'
+      latestResponseCode = inv.ResponseCode ?? -1
+    } catch {}
+  }
+
   const now = nowIso()
+  let updateExpression = 'SET #status = :status, #error = :error, reason = :reason, updatedAt = :updatedAt, completedAt = :completedAt'
+  const expressionAttributeValues: Record<string, any> = {
+    ':status': mapped,
+    ':error': reason,
+    ':reason': status === 'TIMED_OUT' ? 'WORKFLOW_TIMED_OUT' : status === 'ABORTED' ? 'WORKFLOW_ABORTED' : 'WORKFLOW_FAILED',
+    ':updatedAt': now,
+    ':completedAt': now,
+  }
+  if (latestProgress) {
+    updateExpression += ', progress = :progress'
+    expressionAttributeValues[':progress'] = latestProgress
+  }
+  if (latestSsmStatus !== undefined) {
+    updateExpression += ', ssmStatus = :ssmStatus'
+    expressionAttributeValues[':ssmStatus'] = latestSsmStatus
+  }
+  if (latestResponseCode !== undefined) {
+    updateExpression += ', responseCode = :responseCode'
+    expressionAttributeValues[':responseCode'] = latestResponseCode
+  }
   await ddb.send(new UpdateCommand({
     TableName: RUNS_TABLE_NAME,
     Key: { runId: item.runId },
-    UpdateExpression: 'SET #status = :status, #error = :error, reason = :reason, updatedAt = :updatedAt, completedAt = :completedAt',
+    UpdateExpression: updateExpression,
     ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
-    ExpressionAttributeValues: {
-      ':status': mapped,
-      ':error': reason,
-      ':reason': status === 'TIMED_OUT' ? 'WORKFLOW_TIMED_OUT' : status === 'ABORTED' ? 'WORKFLOW_ABORTED' : 'WORKFLOW_FAILED',
-      ':updatedAt': now,
-      ':completedAt': now,
-    },
+    ExpressionAttributeValues: expressionAttributeValues,
   }))
   await stopInstance(item.instanceId)
   await releaseRunnerLock(item.runner, item.runId)
