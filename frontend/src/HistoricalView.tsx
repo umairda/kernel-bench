@@ -177,14 +177,14 @@ export default function HistoricalView({
               />
               <Tooltip formatter={(value) => formatTooltipMilliseconds(value)} labelFormatter={(value) => `N=${formatInteger(Number(value))}`} />
               <Legend />
-              <Scatter name="CPU Add" data={vectorCpuAdd} fill="#0891b2" />
-              <Scatter name="GPU Add" data={vectorGpuAdd} fill="#67e8f9" />
-              <Scatter name="CPU Subtract" data={vectorCpuSubtract} fill="#059669" />
-              <Scatter name="GPU Subtract" data={vectorGpuSubtract} fill="#6ee7b7" />
-              <Scatter name="CPU Multiply" data={vectorCpuMultiply} fill="#d97706" />
-              <Scatter name="GPU Multiply" data={vectorGpuMultiply} fill="#fcd34d" />
-              <Scatter name="CPU Divide" data={vectorCpuDivide} fill="#dc2626" />
-              <Scatter name="GPU Divide" data={vectorGpuDivide} fill="#fca5a5" />
+              <Scatter name="CPU Add" data={vectorCpuAdd} fill="#991b1b" />
+              <Scatter name="GPU Add" data={vectorGpuAdd} fill="#facc15" />
+              <Scatter name="CPU Subtract" data={vectorCpuSubtract} fill="#b91c1c" />
+              <Scatter name="GPU Subtract" data={vectorGpuSubtract} fill="#fde047" />
+              <Scatter name="CPU Multiply" data={vectorCpuMultiply} fill="#dc2626" />
+              <Scatter name="GPU Multiply" data={vectorGpuMultiply} fill="#f59e0b" />
+              <Scatter name="CPU Divide" data={vectorCpuDivide} fill="#ef4444" />
+              <Scatter name="GPU Divide" data={vectorGpuDivide} fill="#fef08a" />
             </ScatterChart>
           </ResponsiveContainer>
         </div>

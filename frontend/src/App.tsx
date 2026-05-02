@@ -92,6 +92,27 @@ function pickDisplayedRun(current: RunRecord | undefined, latest: RunRecord | un
   return undefined
 }
 
+function useStickyDisplayedRun(current: RunRecord | undefined, latest: RunRecord | undefined, expectedRunId: string | null) {
+  const preferred = pickDisplayedRun(current, latest, expectedRunId)
+  const [stickyRun, setStickyRun] = useState<RunRecord | undefined>(preferred)
+
+  useEffect(() => {
+    if (preferred) {
+      setStickyRun(preferred)
+      return
+    }
+
+    if (!expectedRunId) {
+      setStickyRun(undefined)
+      return
+    }
+
+    setStickyRun((previous) => (previous?.runId === expectedRunId ? previous : undefined))
+  }, [expectedRunId, preferred])
+
+  return preferred ?? stickyRun
+}
+
 function shouldAdoptRun(candidate: RunRecord | undefined, current: RunRecord | undefined) {
   if (!candidate) {
     return false
@@ -193,12 +214,12 @@ function App() {
     vectorGpu.data,
   ])
 
-  const displayedVectorCpu = pickDisplayedRun(vectorCpu.data, latestKnownRuns.get('vector:cpu'), vectorRuns.cpuRunId)
-  const displayedVectorGpu = pickDisplayedRun(vectorGpu.data, latestKnownRuns.get('vector:gpu'), vectorRuns.gpuRunId)
-  const displayedMatmulCpu = pickDisplayedRun(matmulCpu.data, latestKnownRuns.get('matrix-multiplication:cpu'), matmulRuns.cpuRunId)
-  const displayedMatmulGpu = pickDisplayedRun(matmulGpu.data, latestKnownRuns.get('matrix-multiplication:gpu'), matmulRuns.gpuRunId)
-  const displayedConvCpu = pickDisplayedRun(convCpu.data, latestKnownRuns.get('convolution:cpu'), convRuns.cpuRunId)
-  const displayedConvGpu = pickDisplayedRun(convGpu.data, latestKnownRuns.get('convolution:gpu'), convRuns.gpuRunId)
+  const displayedVectorCpu = useStickyDisplayedRun(vectorCpu.data, latestKnownRuns.get('vector:cpu'), vectorRuns.cpuRunId)
+  const displayedVectorGpu = useStickyDisplayedRun(vectorGpu.data, latestKnownRuns.get('vector:gpu'), vectorRuns.gpuRunId)
+  const displayedMatmulCpu = useStickyDisplayedRun(matmulCpu.data, latestKnownRuns.get('matrix-multiplication:cpu'), matmulRuns.cpuRunId)
+  const displayedMatmulGpu = useStickyDisplayedRun(matmulGpu.data, latestKnownRuns.get('matrix-multiplication:gpu'), matmulRuns.gpuRunId)
+  const displayedConvCpu = useStickyDisplayedRun(convCpu.data, latestKnownRuns.get('convolution:cpu'), convRuns.cpuRunId)
+  const displayedConvGpu = useStickyDisplayedRun(convGpu.data, latestKnownRuns.get('convolution:gpu'), convRuns.gpuRunId)
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')

@@ -12,7 +12,25 @@ function formatMilliseconds(value?: number | null) {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return 'n/a'
   }
+  if (value > 1000) {
+    return `${(value / 1000).toFixed(1)} s`
+  }
   return `${Math.round(value).toLocaleString()} ms`
+}
+
+function formatCreatedAt(value?: string) {
+  if (!value) {
+    return null
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return { date: value, time: '' }
+  }
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return {
+    date: `${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
+    time: `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`,
+  }
 }
 
 function formatRunParams(run: RunRecord): string {
@@ -52,6 +70,8 @@ export function RunStatusCard({
   startError?: string | null
   launching?: boolean
 }) {
+  const createdAt = run ? formatCreatedAt(run.createdAt) : null
+
   return (
     <GlowCard className="h-full">
       <div className="mb-2 flex items-center gap-2">
@@ -74,6 +94,15 @@ export function RunStatusCard({
           </p>
           <p>
             <span className="font-semibold text-zinc-700 dark:text-zinc-300">Status:</span> {run.status}
+          </p>
+          <p>
+            <span className="font-semibold text-zinc-700 dark:text-zinc-300">Created:</span>{' '}
+            {createdAt ? (
+              <span className="inline-flex items-center">
+                <span>{createdAt.date}</span>
+                {createdAt.time ? <span className="ml-3">{createdAt.time}</span> : null}
+              </span>
+            ) : 'n/a'}
           </p>
           <p>
             <span className="font-semibold text-zinc-700 dark:text-zinc-300">Parameters:</span> {formatRunParams(run)}
