@@ -95,6 +95,29 @@ describe('RunStatusCard', () => {
     expect(screen.getByText(/removeUndefinedValues=true/)).toBeInTheDocument()
   })
 
+  it('shows a fallback duration section for failed runs without performance data', () => {
+    render(
+      <RunStatusCard
+        title="CPU"
+        instanceState="stopped"
+        run={{
+          runId: 'run-failed-no-performance',
+          status: 'FAILED',
+          benchmark: 'matrix-multiplication',
+          runner: 'cpu',
+          params: { inputRows: 10000, inputCols: 10000, outputCols: 10000 },
+          createdAt: '2026-05-02T23:07:57.000Z',
+          completedAt: '2026-05-02T23:09:32.000Z',
+          reason: 'WORKFLOW_STEP_EXCEPTION',
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Total Duration: 95.0 s')).toBeInTheDocument()
+    expect(screen.getByText('Phase Durations')).toBeInTheDocument()
+    expect(screen.getByText('queue/start request')).toBeInTheDocument()
+  })
+
   it('does not show failure details for completed runs', () => {
     render(
       <RunStatusCard

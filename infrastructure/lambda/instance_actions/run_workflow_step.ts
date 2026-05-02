@@ -355,6 +355,35 @@ async function attachPerformance(runId: string, s3Prefix: string): Promise<Recor
   }
 }
 
+function buildFallbackPerformance(input: WorkflowInput, completedAt: string): Record<string, any> | undefined {
+  const createdMs = new Date(input.createdAt).getTime()
+  const completedMs = new Date(completedAt).getTime()
+  if (!Number.isFinite(createdMs) || !Number.isFinite(completedMs)) return undefined
+
+  const phaseDurationsMs = Object.fromEntries(Object.entries({
+    queueStartRequestMs: input.launchTiming?.queueStartRequestMs,
+    instanceBootSsmReadyMs: input.launchTiming?.instanceBootSsmReadyMs,
+  }).filter(([, value]) => typeof value === 'number' && Number.isFinite(value)))
+
+  return {
+    totalDurationMs: Math.max(0, completedMs - createdMs),
+    phaseDurationsMs,
+    operationDurations: [],
+  }
+}
+
+async function storeFallbackPerformance(input: WorkflowInput, completedAt: string): Promise<Record<string, any> | undefined> {
+  const fallback = buildFallbackPerformance(input, completedAt)
+  if (!fallback) return undefined
+  await ddb.send(new UpdateCommand({
+    TableName: RUNS_TABLE_NAME,
+    Key: { runId: input.runId },
+    UpdateExpression: 'SET performance = :performance',
+    ExpressionAttributeValues: { ':performance': fallback },
+  }))
+  return fallback
+}
+
 async function finalize(input: WorkflowInput) {
   const mapped = input.poll?.mappedStatus ?? 'FAILED'
   const ssmStatus = input.poll?.ssmStatus ?? 'Unknown'
@@ -375,6 +404,9 @@ async function finalize(input: WorkflowInput) {
     },
   }))
   const performance = await attachPerformance(input.runId, input.s3Prefix)
+  if (!performance) {
+    await storeFallbackPerformance(input, now)
+  }
   if (mapped === 'COMPLETED' && performance) {
     await writeHistoryRecord({
       runId: input.runId,
@@ -397,12 +429,25 @@ async function finalize(input: WorkflowInput) {
 
 async function fail(input: WorkflowInput, err: string) {
   const now = nowIso()
+  const fallbackPerformance = buildFallbackPerformance(input, now)
+  const values: Record<string, any> = {
+    ':status': 'FAILED',
+    ':error': err,
+    ':reason': 'WORKFLOW_STEP_EXCEPTION',
+    ':completedAt': now,
+    ':updatedAt': now,
+  }
+  let updateExpression = 'SET #status = :status, #error = :error, reason = :reason, completedAt = :completedAt, updatedAt = :updatedAt'
+  if (fallbackPerformance) {
+    updateExpression += ', performance = :performance'
+    values[':performance'] = fallbackPerformance
+  }
   await ddb.send(new UpdateCommand({
     TableName: RUNS_TABLE_NAME,
     Key: { runId: input.runId },
-    UpdateExpression: 'SET #status = :status, #error = :error, reason = :reason, completedAt = :completedAt, updatedAt = :updatedAt',
+    UpdateExpression: updateExpression,
     ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
-    ExpressionAttributeValues: { ':status': 'FAILED', ':error': err, ':reason': 'WORKFLOW_STEP_EXCEPTION', ':completedAt': now, ':updatedAt': now },
+    ExpressionAttributeValues: values,
   }))
   try { await ec2.send(new StopInstancesCommand({ InstanceIds: [input.instanceId] })) } catch {}
   await releaseRunnerLock(input.runner, input.runId)

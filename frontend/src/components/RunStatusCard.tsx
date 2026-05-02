@@ -51,6 +51,10 @@ function isActiveStatus(status: RunRecord['status']) {
   return status === 'STARTING' || status === 'RUNNING'
 }
 
+function isTerminalStatus(status: RunRecord['status']) {
+  return status === 'COMPLETED' || status === 'FAILED' || status === 'CANCELLED'
+}
+
 function shouldShowFailureDetails(run: RunRecord) {
   return (run.status === 'FAILED' || run.status === 'CANCELLED') && Boolean(run.reason || run.error)
 }
@@ -76,6 +80,22 @@ function runEndTimeMs(run: RunRecord) {
   }
   const endMs = new Date(endTime).getTime()
   return Number.isNaN(endMs) ? null : endMs
+}
+
+function fallbackPerformance(run: RunRecord) {
+  if (!isTerminalStatus(run.status)) {
+    return undefined
+  }
+  const createdMs = run.createdAt ? new Date(run.createdAt).getTime() : NaN
+  const endedMs = runEndTimeMs(run)
+  if (!Number.isFinite(createdMs) || typeof endedMs !== 'number') {
+    return undefined
+  }
+  return {
+    totalDurationMs: Math.max(0, endedMs - createdMs),
+    phaseDurationsMs: {},
+    operationDurations: [],
+  } satisfies NonNullable<RunRecord['performance']>
 }
 
 function formatRunParams(run: RunRecord): string {
@@ -132,6 +152,8 @@ export function RunStatusCard({
   const elapsed = run
     ? formatElapsed(run.createdAt, isActiveStatus(run.status) ? nowMs : runEndTimeMs(run) ?? undefined)
     : null
+  const performance = run?.performance ?? (run ? fallbackPerformance(run) : undefined)
+  const phaseDurations = performance?.phaseDurationsMs as NonNullable<NonNullable<RunRecord['performance']>['phaseDurationsMs']> | undefined
 
   return (
     <GlowCard className="h-full">
@@ -246,40 +268,40 @@ export function RunStatusCard({
               ) : null}
             </div>
           ) : null}
-          {run.performance ? (
+          {performance ? (
             <div className="rounded-md border border-zinc-300 bg-zinc-100 p-3 text-xs dark:border-white/10 dark:bg-zinc-950">
               <p className="font-semibold text-zinc-700 dark:text-zinc-300">
-                Total Duration: {formatMilliseconds(run.performance.totalDurationMs)}
+                Total Duration: {formatMilliseconds(performance.totalDurationMs)}
               </p>
-              {run.performance.phaseDurationsMs ? (
+              {phaseDurations ? (
                 <div className="mt-2 space-y-1">
                   <p className="font-semibold text-zinc-700 dark:text-zinc-300">Phase Durations</p>
                   <p className="flex items-center justify-between gap-3 pl-3">
                     <span>queue/start request</span>
-                    <span>{formatMilliseconds(run.performance.phaseDurationsMs.queueStartRequestMs)}</span>
+                    <span>{formatMilliseconds(phaseDurations.queueStartRequestMs)}</span>
                   </p>
                   <p className="flex items-center justify-between gap-3 pl-3">
                     <span>instance boot + SSM ready</span>
-                    <span>{formatMilliseconds(run.performance.phaseDurationsMs.instanceBootSsmReadyMs)}</span>
+                    <span>{formatMilliseconds(phaseDurations.instanceBootSsmReadyMs)}</span>
                   </p>
                   <p className="flex items-center justify-between gap-3 pl-3">
                     <span>build/setup</span>
-                    <span>{formatMilliseconds(run.performance.phaseDurationsMs.buildSetupMs)}</span>
+                    <span>{formatMilliseconds(phaseDurations.buildSetupMs)}</span>
                   </p>
                   <p className="flex items-center justify-between gap-3 pl-3">
                     <span>benchmark execution</span>
-                    <span>{formatMilliseconds(run.performance.phaseDurationsMs.benchmarkExecutionMs)}</span>
+                    <span>{formatMilliseconds(phaseDurations.benchmarkExecutionMs)}</span>
                   </p>
                   <p className="flex items-center justify-between gap-3 pl-3">
                     <span>upload/finalization</span>
-                    <span>{formatMilliseconds(run.performance.phaseDurationsMs.uploadFinalizationMs)}</span>
+                    <span>{formatMilliseconds(phaseDurations.uploadFinalizationMs)}</span>
                   </p>
                 </div>
               ) : null}
-              {run.performance.operationDurations && run.performance.operationDurations.length > 0 ? (
+              {performance.operationDurations && performance.operationDurations.length > 0 ? (
                 <div className="mt-2 space-y-1">
                   <p className="font-semibold text-zinc-700 dark:text-zinc-300">Operation Durations</p>
-                  {run.performance.operationDurations.map((op) => (
+                  {performance.operationDurations.map((op) => (
                     <p key={op.name} className="flex items-center justify-between gap-3 pl-3">
                       <span className="font-medium">{op.name}</span>
                       <span>{formatMilliseconds(op.durationMs)}</span>
