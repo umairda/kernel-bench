@@ -17,6 +17,14 @@ describe('rpc_methods/start_run', () => {
   it('starts execution on valid request', async () => {
     const ddb = { send: vi.fn().mockResolvedValue({}) }
     const sfn = { send: vi.fn().mockResolvedValue({}) }
+    vi.doMock('../../../lambda/rpc_methods/shared', async () => {
+      const actual = await vi.importActual<any>('../../../lambda/rpc_methods/shared')
+      return {
+        ...actual,
+        acquireRunnerLock: vi.fn().mockResolvedValue({ ok: true }),
+        getState: vi.fn().mockResolvedValue('stopped'),
+      }
+    })
     vi.doMock('../../../lambda/aws', async () => {
       const actual = await vi.importActual<any>('../../../lambda/aws')
       return { ...actual, ddb, sfn, putMetric: vi.fn().mockResolvedValue(undefined) }
@@ -27,4 +35,3 @@ describe('rpc_methods/start_run', () => {
     expect(sfn.send).toHaveBeenCalled()
   })
 })
-

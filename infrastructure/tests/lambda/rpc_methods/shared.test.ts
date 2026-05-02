@@ -1,12 +1,14 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 describe('rpc_methods/shared', () => {
   beforeEach(() => {
+    vi.resetModules()
     process.env.RUNS_TABLE_NAME = 'Runs'
     process.env.ARTIFACT_BUCKET_NAME = 'Artifacts'
     process.env.CPU_INSTANCE_ID = 'i-cpu'
     process.env.GPU_INSTANCE_ID = 'i-gpu'
     process.env.STARTING_STALE_SECONDS = '1'
+    process.env.RUN_WORKFLOW_STATE_MACHINE_ARN = 'arn:aws:states:us-east-1:123:stateMachine:kb'
   })
 
   it('validates object params and integers', async () => {
@@ -22,5 +24,22 @@ describe('rpc_methods/shared', () => {
     expect(shared.parseRunner('cpu')).toBe('cpu')
     expect(() => shared.parseRunner('bad')).toThrow()
   })
-})
 
+  it('can release a runner lock without aborting in-flight workflow execution', async () => {
+    const ddb = { send: vi.fn().mockResolvedValue(undefined) }
+    const ssm = { send: vi.fn() }
+    const sfn = { send: vi.fn() }
+    const ec2 = { send: vi.fn() }
+    const s3 = { send: vi.fn() }
+    const putMetric = vi.fn()
+
+    vi.doMock('../../../lambda/aws', () => ({ ddb, ssm, sfn, ec2, s3, putMetric }))
+
+    const shared = await import('../../../lambda/rpc_methods/shared')
+    await shared.releaseRunnerLock('gpu', 'run-1', { cancelInFlight: false })
+
+    expect(ddb.send).toHaveBeenCalledTimes(1)
+    expect(ssm.send).not.toHaveBeenCalled()
+    expect(sfn.send).not.toHaveBeenCalled()
+  })
+})
