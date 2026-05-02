@@ -152,6 +152,9 @@ export function publicRunView(item: Record<string, any>): Record<string, any> {
   if (item.startupProgress && typeof item.startupProgress === 'object') {
     out.startupProgress = item.startupProgress
   }
+  if (item.progress && typeof item.progress === 'object') {
+    out.progress = item.progress
+  }
   const normalizedPerformance = normalizePerformance(item.performance)
   if (normalizedPerformance) {
     out.performance = normalizedPerformance

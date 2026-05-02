@@ -19,6 +19,19 @@ function formatMilliseconds(value?: number | null) {
   return `${Math.round(value).toLocaleString()} ms`
 }
 
+function formatSeconds(value?: number | null) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return 'n/a'
+  }
+  if (value >= 3600) {
+    return `${(value / 3600).toFixed(1)} h`
+  }
+  if (value >= 60) {
+    return `${(value / 60).toFixed(1)} m`
+  }
+  return `${value.toFixed(1)} s`
+}
+
 function formatCreatedAt(value?: string) {
   if (!value) {
     return null
@@ -176,6 +189,48 @@ export function RunStatusCard({
               </p>
               {run.startupProgress.detail ? (
                 <p className="mt-1 text-zinc-600 dark:text-zinc-300">{run.startupProgress.detail}</p>
+              ) : null}
+            </div>
+          ) : null}
+          {run.status === 'RUNNING' && run.progress ? (
+            <div className="rounded-md border border-zinc-300 bg-zinc-100 p-3 text-xs dark:border-white/10 dark:bg-zinc-950">
+              <p className="font-semibold text-zinc-700 dark:text-zinc-300">Execution Progress</p>
+              <p className="mt-1 flex items-center justify-between gap-3">
+                <span>phase</span>
+                <span>{run.progress.phase ?? 'running'}</span>
+              </p>
+              {typeof run.progress.rowsDone === 'number' && typeof run.progress.totalRows === 'number' ? (
+                <p className="flex items-center justify-between gap-3">
+                  <span>rows</span>
+                  <span>{formatInteger(run.progress.rowsDone)} / {formatInteger(run.progress.totalRows)}</span>
+                </p>
+              ) : null}
+              {typeof run.progress.percent === 'number' ? (
+                <p className="flex items-center justify-between gap-3">
+                  <span>complete</span>
+                  <span>{run.progress.percent.toFixed(2)}%</span>
+                </p>
+              ) : null}
+              {typeof run.progress.elapsedMs === 'number' ? (
+                <p className="flex items-center justify-between gap-3">
+                  <span>elapsed</span>
+                  <span>{formatMilliseconds(run.progress.elapsedMs)}</span>
+                </p>
+              ) : null}
+              {typeof run.progress.elapsedS === 'number' ? (
+                <p className="flex items-center justify-between gap-3">
+                  <span>elapsed (compute)</span>
+                  <span>{formatSeconds(run.progress.elapsedS)}</span>
+                </p>
+              ) : null}
+              {typeof run.progress.etaS === 'number' ? (
+                <p className="flex items-center justify-between gap-3">
+                  <span>eta</span>
+                  <span>{formatSeconds(run.progress.etaS)}</span>
+                </p>
+              ) : null}
+              {run.progress.detail ? (
+                <p className="mt-1 text-zinc-600 dark:text-zinc-300">{run.progress.detail}</p>
               ) : null}
             </div>
           ) : null}

@@ -20,6 +20,7 @@ import {
   reconcileWorkflowTerminal,
   ssm,
   reasonFromSsm,
+  extractLatestProgress,
 } from './shared'
 
 export async function rpcRunStatus(rawParams: unknown) {
@@ -72,6 +73,7 @@ export async function rpcRunStatus(rawParams: unknown) {
   try {
     const inv = await ssm.send(new GetCommandInvocationCommand({ CommandId: commandId, InstanceId: instanceId }))
     const mapped = mapSsmStatus(inv.Status ?? 'Unknown')
+    const latestProgress = extractLatestProgress(inv.StandardOutputContent)
     if (mapped === 'RUNNING') {
       const state = await getState(instanceId)
       if (['stopped', 'stopping', 'shutting-down', 'terminated'].includes(state)) {
@@ -105,6 +107,10 @@ export async function rpcRunStatus(rawParams: unknown) {
       ':responseCode': inv.ResponseCode ?? -1,
     }
     let updateExpression = 'SET #status = :status, reason = :reason, ssmStatus = :ssmStatus, updatedAt = :updatedAt, responseCode = :responseCode'
+    if (latestProgress) {
+      updateExpression += ', progress = :progress'
+      values[':progress'] = latestProgress
+    }
     if (TERMINAL_STATUSES.has(mapped)) {
       updateExpression += ', completedAt = :completedAt'
       values[':completedAt'] = nowIso()

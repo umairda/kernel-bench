@@ -219,7 +219,16 @@ operations = []
 
 def run_and_capture(name, argv, op_type=None):
     op_start = time.perf_counter()
-    output = subprocess.check_output(argv, text=True, stderr=subprocess.STDOUT)
+    output_lines = []
+    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        print(line, end='', flush=True)
+        output_lines.append(line)
+    proc.wait()
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, argv, output=''.join(output_lines))
+    output = ''.join(output_lines)
     elapsed_ms = (time.perf_counter() - op_start) * 1000.0
     (results_dir / f"{name}.txt").write_text(output)
     measured_ms = elapsed_ms

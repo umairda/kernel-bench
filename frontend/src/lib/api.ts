@@ -48,6 +48,22 @@ export type RunRecord = {
     detail?: string
     observedAt?: string
   }
+  progress?: {
+    op?: string
+    backend?: string
+    status?: string
+    phase?: string
+    detail?: string
+    rowsDone?: number
+    totalRows?: number
+    percent?: number
+    elapsedMs?: number
+    elapsedS?: number
+    etaS?: number
+    heartbeat?: number
+    detailed?: number
+    observedAt?: string
+  }
   performance?: {
     totalDurationMs?: number
     phaseDurationsMs?: {
