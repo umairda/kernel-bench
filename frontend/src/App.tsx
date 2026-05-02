@@ -175,6 +175,17 @@ function App() {
   const latestKnownRun = useMemo(() => {
     return [...latestKnownRuns.values()].sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')))[0]
   }, [latestKnownRuns])
+  const latestBenchmarkRuns = useMemo(() => {
+    const byTab = new Map<BenchmarkTab, RunRecord>()
+    for (const run of latestKnownRuns.values()) {
+      const tab = benchmarkToTab(run.benchmark)
+      const current = byTab.get(tab)
+      if (!current || String(run.createdAt ?? '') > String(current.createdAt ?? '')) {
+        byTab.set(tab, run)
+      }
+    }
+    return byTab
+  }, [latestKnownRuns])
 
   useEffect(() => {
     const activeItems = inProgressRuns.data?.items ?? []
@@ -290,6 +301,7 @@ function App() {
         <VectorSection
           cpuState={cpuState}
           gpuState={gpuState}
+          lastRun={latestBenchmarkRuns.get('vector')}
           cpuRun={displayedVectorCpu}
           gpuRun={displayedVectorGpu}
           cpuStartError={vectorRuns.cpuStartError}
@@ -307,6 +319,7 @@ function App() {
         <MatmulSection
           cpuState={cpuState}
           gpuState={gpuState}
+          lastRun={latestBenchmarkRuns.get('matmul')}
           cpuRun={displayedMatmulCpu}
           gpuRun={displayedMatmulGpu}
           cpuStartError={matmulRuns.cpuStartError}
@@ -324,6 +337,7 @@ function App() {
         <ConvolutionSection
           cpuState={cpuState}
           gpuState={gpuState}
+          lastRun={latestBenchmarkRuns.get('conv')}
           cpuRun={displayedConvCpu}
           gpuRun={displayedConvGpu}
           cpuStartError={convRuns.cpuStartError}

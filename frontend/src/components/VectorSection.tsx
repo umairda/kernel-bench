@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Loader2, Play } from 'lucide-react'
 import { type RunRecord, useStartRunMutation } from '../lib/api'
 import { NumberField } from './NumberField'
@@ -6,10 +6,17 @@ import { RunStatusCard } from './RunStatusCard'
 import { ShimmerButton } from './aceternity/shimmer-button'
 
 type VectorParams = { vectorLength: number }
+const DEFAULT_VECTOR_PARAMS: VectorParams = { vectorLength: 100000 }
+
+function numberParam(params: Record<string, number> | undefined, key: keyof VectorParams, fallback: number) {
+  const value = params?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
 
 export function VectorSection({
   cpuState,
   gpuState,
+  lastRun,
   cpuRun,
   gpuRun,
   cpuStartError,
@@ -23,6 +30,7 @@ export function VectorSection({
 }: {
   cpuState: string
   gpuState: string
+  lastRun?: RunRecord
   cpuRun?: RunRecord
   gpuRun?: RunRecord
   cpuStartError?: string | null
@@ -34,9 +42,18 @@ export function VectorSection({
   onCpuStartError: (message: string | null) => void
   onGpuStartError: (message: string | null) => void
 }) {
-  const [params, setParams] = useState<VectorParams>({ vectorLength: 100000 })
+  const [params, setParams] = useState<VectorParams>(DEFAULT_VECTOR_PARAMS)
   const cpuStart = useStartRunMutation()
   const gpuStart = useStartRunMutation()
+
+  useEffect(() => {
+    if (!lastRun) {
+      return
+    }
+    setParams({
+      vectorLength: numberParam(lastRun.params, 'vectorLength', DEFAULT_VECTOR_PARAMS.vectorLength),
+    })
+  }, [lastRun?.runId])
 
   const valid = Number.isFinite(params.vectorLength) && params.vectorLength > 0
   const cpuLaunching = cpuStart.isPending

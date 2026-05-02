@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Loader2, Play } from 'lucide-react'
 import { type RunRecord, useStartRunMutation } from '../lib/api'
 import { NumberField } from './NumberField'
@@ -20,8 +20,26 @@ type ConvParams = {
   padW: number
 }
 
+const DEFAULT_CONV_PARAMS: ConvParams = {
+  inputN: 1,
+  inputC: 3,
+  inputH: 64,
+  inputW: 64,
+  filterOutC: 16,
+  filterH: 3,
+  filterW: 3,
+  strideH: 1,
+  strideW: 1,
+  padH: 1,
+  padW: 1,
+}
 const BYTES_PER_FLOAT32 = 4
 const G4DN_XLARGE_CONV_TOTAL_BYTES_LIMIT = 8 * 1024 * 1024 * 1024 // conservative 50% of 16 GiB GPU memory
+
+function numberParam(params: Record<string, number> | undefined, key: keyof ConvParams, fallback: number) {
+  const value = params?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
 
 function formatBytes(bytes: number) {
   const numberFormat = { minimumFractionDigits: 1, maximumFractionDigits: 1 }
@@ -49,6 +67,7 @@ function TooltipLabel({ label, description }: { label: string; description: stri
 export function ConvolutionSection({
   cpuState,
   gpuState,
+  lastRun,
   cpuRun,
   gpuRun,
   cpuStartError,
@@ -62,6 +81,7 @@ export function ConvolutionSection({
 }: {
   cpuState: string
   gpuState: string
+  lastRun?: RunRecord
   cpuRun?: RunRecord
   gpuRun?: RunRecord
   cpuStartError?: string | null
@@ -73,21 +93,28 @@ export function ConvolutionSection({
   onCpuStartError: (message: string | null) => void
   onGpuStartError: (message: string | null) => void
 }) {
-  const [params, setParams] = useState<ConvParams>({
-    inputN: 1,
-    inputC: 3,
-    inputH: 64,
-    inputW: 64,
-    filterOutC: 16,
-    filterH: 3,
-    filterW: 3,
-    strideH: 1,
-    strideW: 1,
-    padH: 1,
-    padW: 1,
-  })
+  const [params, setParams] = useState<ConvParams>(DEFAULT_CONV_PARAMS)
   const cpuStart = useStartRunMutation()
   const gpuStart = useStartRunMutation()
+
+  useEffect(() => {
+    if (!lastRun) {
+      return
+    }
+    setParams({
+      inputN: numberParam(lastRun.params, 'inputN', DEFAULT_CONV_PARAMS.inputN),
+      inputC: numberParam(lastRun.params, 'inputC', DEFAULT_CONV_PARAMS.inputC),
+      inputH: numberParam(lastRun.params, 'inputH', DEFAULT_CONV_PARAMS.inputH),
+      inputW: numberParam(lastRun.params, 'inputW', DEFAULT_CONV_PARAMS.inputW),
+      filterOutC: numberParam(lastRun.params, 'filterOutC', DEFAULT_CONV_PARAMS.filterOutC),
+      filterH: numberParam(lastRun.params, 'filterH', DEFAULT_CONV_PARAMS.filterH),
+      filterW: numberParam(lastRun.params, 'filterW', DEFAULT_CONV_PARAMS.filterW),
+      strideH: numberParam(lastRun.params, 'strideH', DEFAULT_CONV_PARAMS.strideH),
+      strideW: numberParam(lastRun.params, 'strideW', DEFAULT_CONV_PARAMS.strideW),
+      padH: numberParam(lastRun.params, 'padH', DEFAULT_CONV_PARAMS.padH),
+      padW: numberParam(lastRun.params, 'padW', DEFAULT_CONV_PARAMS.padW),
+    })
+  }, [lastRun?.runId])
 
   const valid =
     Object.values(params).every((v) => Number.isFinite(v)) &&

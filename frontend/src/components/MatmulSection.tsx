@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Loader2, Play } from 'lucide-react'
 import { type RunRecord, useStartRunMutation } from '../lib/api'
 import { NumberField } from './NumberField'
@@ -6,8 +6,14 @@ import { RunStatusCard } from './RunStatusCard'
 import { ShimmerButton } from './aceternity/shimmer-button'
 
 type MatmulParams = { inputRows: number; inputCols: number; outputCols: number }
+const DEFAULT_MATMUL_PARAMS: MatmulParams = { inputRows: 256, inputCols: 256, outputCols: 256 }
 const BYTES_PER_FLOAT32 = 4
 const G4DN_XLARGE_MATMUL_TOTAL_BYTES_LIMIT = 8 * 1024 * 1024 * 1024
+
+function numberParam(params: Record<string, number> | undefined, key: keyof MatmulParams, fallback: number) {
+  const value = params?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
 
 function formatBytes(bytes: number) {
   const numberFormat = { minimumFractionDigits: 1, maximumFractionDigits: 1 }
@@ -26,6 +32,7 @@ function formatBytes(bytes: number) {
 export function MatmulSection({
   cpuState,
   gpuState,
+  lastRun,
   cpuRun,
   gpuRun,
   cpuStartError,
@@ -39,6 +46,7 @@ export function MatmulSection({
 }: {
   cpuState: string
   gpuState: string
+  lastRun?: RunRecord
   cpuRun?: RunRecord
   gpuRun?: RunRecord
   cpuStartError?: string | null
@@ -50,9 +58,20 @@ export function MatmulSection({
   onCpuStartError: (message: string | null) => void
   onGpuStartError: (message: string | null) => void
 }) {
-  const [params, setParams] = useState<MatmulParams>({ inputRows: 256, inputCols: 256, outputCols: 256 })
+  const [params, setParams] = useState<MatmulParams>(DEFAULT_MATMUL_PARAMS)
   const cpuStart = useStartRunMutation()
   const gpuStart = useStartRunMutation()
+
+  useEffect(() => {
+    if (!lastRun) {
+      return
+    }
+    setParams({
+      inputRows: numberParam(lastRun.params, 'inputRows', DEFAULT_MATMUL_PARAMS.inputRows),
+      inputCols: numberParam(lastRun.params, 'inputCols', DEFAULT_MATMUL_PARAMS.inputCols),
+      outputCols: numberParam(lastRun.params, 'outputCols', DEFAULT_MATMUL_PARAMS.outputCols),
+    })
+  }, [lastRun?.runId])
 
   const valid =
     Number.isFinite(params.inputRows) &&
