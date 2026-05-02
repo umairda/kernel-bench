@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { GlowCard } from './aceternity/glow-card'
 import type { RunRecord } from '../lib/api'
 
@@ -31,6 +32,33 @@ function formatCreatedAt(value?: string) {
     date: `${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
     time: `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`,
   }
+}
+
+function isActiveStatus(status: RunRecord['status']) {
+  return status === 'STARTING' || status === 'RUNNING'
+}
+
+function formatElapsed(createdAt?: string, endMs?: number) {
+  if (!createdAt || typeof endMs !== 'number') {
+    return null
+  }
+  const createdMs = new Date(createdAt).getTime()
+  if (Number.isNaN(createdMs)) {
+    return null
+  }
+  const elapsedSeconds = Math.max(0, Math.floor((endMs - createdMs) / 1000))
+  const minutes = Math.floor(elapsedSeconds / 60)
+  const seconds = elapsedSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
+function runEndTimeMs(run: RunRecord) {
+  const endTime = run.completedAt ?? run.updatedAt
+  if (!endTime) {
+    return null
+  }
+  const endMs = new Date(endTime).getTime()
+  return Number.isNaN(endMs) ? null : endMs
 }
 
 function formatRunParams(run: RunRecord): string {
@@ -71,6 +99,22 @@ export function RunStatusCard({
   launching?: boolean
 }) {
   const createdAt = run ? formatCreatedAt(run.createdAt) : null
+  const [nowMs, setNowMs] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (!run || !isActiveStatus(run.status)) {
+      return
+    }
+    setNowMs(Date.now())
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now())
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [run?.createdAt, run?.runId, run?.status])
+
+  const elapsed = run
+    ? formatElapsed(run.createdAt, isActiveStatus(run.status) ? nowMs : runEndTimeMs(run) ?? undefined)
+    : null
 
   return (
     <GlowCard className="h-full">
@@ -93,7 +137,7 @@ export function RunStatusCard({
             <span className="font-semibold text-zinc-700 dark:text-zinc-300">Run ID:</span> {run.runId}
           </p>
           <p>
-            <span className="font-semibold text-zinc-700 dark:text-zinc-300">Status:</span> {run.status}
+            <span className="font-semibold text-zinc-700 dark:text-zinc-300">Status:</span> {run.status}{elapsed ? ` [${elapsed}]` : ''}
           </p>
           <p>
             <span className="font-semibold text-zinc-700 dark:text-zinc-300">Created:</span>{' '}

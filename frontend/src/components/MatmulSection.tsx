@@ -11,14 +11,14 @@ const G4DN_XLARGE_MATMUL_TOTAL_BYTES_LIMIT = 8 * 1024 * 1024 * 1024
 
 function formatBytes(bytes: number) {
   const numberFormat = { minimumFractionDigits: 1, maximumFractionDigits: 1 }
-  if (bytes >= 1024 * 1024 * 1024) {
-    return `${(bytes / (1024 * 1024 * 1024)).toLocaleString(undefined, numberFormat)} GiB`
+  if (bytes >= 1000 * 1000 * 1000) {
+    return `${(bytes / (1000 * 1000 * 1000)).toLocaleString(undefined, numberFormat)} GB`
   }
-  if (bytes >= 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toLocaleString(undefined, numberFormat)} MiB`
+  if (bytes >= 1000 * 1000) {
+    return `${(bytes / (1000 * 1000)).toLocaleString(undefined, numberFormat)} MB`
   }
-  if (bytes >= 1024) {
-    return `${(bytes / 1024).toLocaleString(undefined, numberFormat)} KiB`
+  if (bytes >= 1000) {
+    return `${(bytes / 1000).toLocaleString(undefined, numberFormat)} KB`
   }
   return `${bytes.toLocaleString(undefined, numberFormat)} B`
 }
@@ -90,7 +90,7 @@ export function MatmulSection({
             <span className="font-semibold">Total:</span> {formatBytes(bytesTotal)}
           </p>
           <p className="mt-1 text-zinc-600 dark:text-zinc-400">
-            Constraint (g4dn.xlarge): total should be less than {formatBytes(G4DN_XLARGE_MATMUL_TOTAL_BYTES_LIMIT)}
+            Constraint (g4dn.xlarge): total should be less than {formatBytes(G4DN_XLARGE_MATMUL_TOTAL_BYTES_LIMIT)} (~8.6 GB)
           </p>
         </div>
         <div className="flex flex-wrap gap-3">

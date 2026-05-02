@@ -48,7 +48,27 @@ describe('RunStatusCard', () => {
     expect(screen.getByText('64x32 * 32x16')).toBeInTheDocument()
     expect(screen.getByText('Startup Progress')).toBeInTheDocument()
     expect(screen.getByText('Waiting for instance checks')).toBeInTheDocument()
-    expect(screen.getByText('Total Duration: 2,500 ms')).toBeInTheDocument()
+    expect(screen.getByText('Total Duration: 2.5 s')).toBeInTheDocument()
     expect(screen.getByText('333 ms')).toBeInTheDocument()
+  })
+
+  it('shows elapsed duration for completed runs from created to completed time', () => {
+    render(
+      <RunStatusCard
+        title="CPU"
+        instanceState="stopped"
+        run={{
+          runId: 'run-complete',
+          status: 'COMPLETED',
+          benchmark: 'vector',
+          runner: 'cpu',
+          params: { vectorLength: 128 },
+          createdAt: '2026-05-02T19:00:00.000Z',
+          completedAt: '2026-05-02T19:04:10.000Z',
+        }}
+      />,
+    )
+
+    expect(screen.getByText('COMPLETED [4:10]', { exact: false })).toBeInTheDocument()
   })
 })
