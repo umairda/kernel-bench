@@ -21,6 +21,7 @@ import {
   ssm,
   reasonFromSsm,
   extractLatestProgress,
+  extractLatestProgressFromLogs,
 } from './shared'
 
 export async function rpcRunStatus(rawParams: unknown) {
@@ -73,7 +74,7 @@ export async function rpcRunStatus(rawParams: unknown) {
   try {
     const inv = await ssm.send(new GetCommandInvocationCommand({ CommandId: commandId, InstanceId: instanceId }))
     const mapped = mapSsmStatus(inv.Status ?? 'Unknown')
-    const latestProgress = extractLatestProgress(inv.StandardOutputContent)
+    const latestProgress = extractLatestProgress(inv.StandardOutputContent) ?? await extractLatestProgressFromLogs(commandId, instanceId)
     if (mapped === 'RUNNING') {
       const state = await getState(instanceId)
       if (['stopped', 'stopping', 'shutting-down', 'terminated'].includes(state)) {

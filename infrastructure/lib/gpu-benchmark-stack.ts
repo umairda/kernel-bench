@@ -6,6 +6,7 @@ import * as cr from 'aws-cdk-lib/custom-resources';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
@@ -35,6 +36,11 @@ export class KernelBenchStack extends cdk.Stack {
 
     const account = cdk.Stack.of(this).account;
     const region = cdk.Stack.of(this).region;
+    const ssmOutputLogGroup = new logs.LogGroup(this, 'KernelBench-SsmOutputLogGroup', {
+      logGroupName: '/kernelbench/ssm-output',
+      retention: logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
     const originVerifySecret = new cdk.CfnParameter(this, 'KernelBench-OriginVerifySecret', {
       type: 'String',
       noEcho: true,
@@ -252,6 +258,7 @@ export class KernelBenchStack extends cdk.Stack {
         SOURCE_ARCHIVE_KEY: props.sourceArchiveKey,
         BASE_COMMAND_TIMEOUT_SECONDS: String(90 * 60),
         MAX_COMMAND_TIMEOUT_SECONDS: String(6 * 60 * 60),
+        SSM_OUTPUT_LOG_GROUP: ssmOutputLogGroup.logGroupName,
       },
     });
     const sweepStaleRunsFn = new lambdaNodejs.NodejsFunction(this, 'KernelBench-SweepStaleRunsFn', {
@@ -289,6 +296,7 @@ export class KernelBenchStack extends cdk.Stack {
         ORIGIN_VERIFY_SECRET: originVerifySecret.valueAsString,
         RUNNER_LOCK_TTL_SECONDS: '7200',
         STARTING_STALE_SECONDS: '900',
+        SSM_OUTPUT_LOG_GROUP: ssmOutputLogGroup.logGroupName,
       },
     });
 
@@ -317,6 +325,7 @@ export class KernelBenchStack extends cdk.Stack {
         resources: ['*'],
       }),
     );
+    ssmOutputLogGroup.grantRead(runWorkflowStepFn);
     artifactBucket.grantRead(runWorkflowStepFn);
 
     rpcFn.addToRolePolicy(
@@ -331,6 +340,7 @@ export class KernelBenchStack extends cdk.Stack {
         resources: ['*'],
       }),
     );
+    ssmOutputLogGroup.grantRead(rpcFn);
     sweepStaleRunsFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['ec2:StopInstances', 'ec2:DescribeInstances', 'ssm:ListCommandInvocations'],

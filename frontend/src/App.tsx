@@ -65,6 +65,16 @@ function sectionExecuting(runCpu?: RunRecord, runGpu?: RunRecord, cpuLaunching?:
   )
 }
 
+function benchmarkToTab(benchmark: RunRecord['benchmark']): BenchmarkTab {
+  if (benchmark === 'matrix-multiplication') {
+    return 'matmul'
+  }
+  if (benchmark === 'convolution') {
+    return 'conv'
+  }
+  return 'vector'
+}
+
 function latestRunByKey(items: RunRecord[]) {
   const latestByKey = new Map<string, RunRecord>()
 
@@ -169,6 +179,18 @@ function App() {
     ...(inProgressRuns.data?.items ?? []),
     ...(runHistory.data?.items ?? []),
   ]), [inProgressRuns.data?.items, runHistory.data?.items])
+
+  useEffect(() => {
+    const activeItems = inProgressRuns.data?.items ?? []
+    if (activeItems.length === 0) {
+      return
+    }
+
+    const selectedTabHasActiveRun = activeItems.some((run) => benchmarkToTab(run.benchmark) === activeRunTab)
+    if (!selectedTabHasActiveRun) {
+      setActiveRunTab(benchmarkToTab(activeItems[0].benchmark))
+    }
+  }, [activeRunTab, inProgressRuns.data?.items])
 
   useEffect(() => {
     if (latestKnownRuns.size === 0) {

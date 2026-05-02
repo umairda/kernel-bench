@@ -1,4 +1,5 @@
 import { CloudWatchClient, PutMetricDataCommand } from '@aws-sdk/client-cloudwatch'
+import { CloudWatchLogsClient } from '@aws-sdk/client-cloudwatch-logs'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb'
 import { EC2Client } from '@aws-sdk/client-ec2'
@@ -12,6 +13,7 @@ export const ssm = new SSMClient({})
 export const s3 = new S3Client({})
 export const sfn = new SFNClient({})
 export const cloudwatch = new CloudWatchClient({})
+export const cloudwatchLogs = new CloudWatchLogsClient({})
 
 export async function putMetric(metricName: string, value: number, runner?: string, benchmark?: string, unit: 'Count'|'Seconds'='Count') {
   const Dimensions = [

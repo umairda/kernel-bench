@@ -1,9 +1,10 @@
 import type { Context } from 'aws-lambda'
 import { DeleteCommand, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { DescribeInstanceStatusCommand, DescribeInstancesCommand, StartInstancesCommand, StopInstancesCommand, waitUntilInstanceRunning, waitUntilInstanceStopped } from '@aws-sdk/client-ec2'
+import { FilterLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs'
 import { DescribeInstanceInformationCommand, GetCommandInvocationCommand, SendCommandCommand } from '@aws-sdk/client-ssm'
 import { GetObjectCommand } from '@aws-sdk/client-s3'
-import { ddb, ec2, putMetric, s3, ssm } from '../aws'
+import { cloudwatchLogs, ddb, ec2, putMetric, s3, ssm } from '../aws'
 import { mapSsmStatus, normalizePerformance, nowIso, reasonFromSsm, TERMINAL_STATUSES } from '../common'
 import { writeHistoryRecord } from '../history'
 
@@ -12,6 +13,7 @@ const ARTIFACT_BUCKET_NAME = process.env.ARTIFACT_BUCKET_NAME!
 const SOURCE_ARCHIVE_KEY = process.env.SOURCE_ARCHIVE_KEY!
 const BASE_COMMAND_TIMEOUT_SECONDS = Number(process.env.BASE_COMMAND_TIMEOUT_SECONDS ?? String(90 * 60))
 const MAX_COMMAND_TIMEOUT_SECONDS = Number(process.env.MAX_COMMAND_TIMEOUT_SECONDS ?? String(6 * 60 * 60))
+const SSM_OUTPUT_LOG_GROUP = process.env.SSM_OUTPUT_LOG_GROUP ?? '/kernelbench/ssm-output'
 
 type WorkflowInput = {
   action: 'START_AND_WAIT' | 'DISPATCH' | 'POLL' | 'FINALIZE' | 'FAIL'
@@ -78,6 +80,27 @@ function extractLatestProgress(standardOutputContent?: string): Record<string, a
     const parsed = parseProgressLine(line)
     if (parsed) return parsed
   }
+  return undefined
+}
+
+async function extractLatestProgressFromLogs(commandId?: string, instanceId?: string): Promise<Record<string, any> | undefined> {
+  if (!commandId || !instanceId) return undefined
+  try {
+    const resp = await cloudwatchLogs.send(new FilterLogEventsCommand({
+      logGroupName: SSM_OUTPUT_LOG_GROUP,
+      logStreamNamePrefix: `${commandId}/${instanceId}/`,
+      filterPattern: `"${PROGRESS_PREFIX.trim()}"`,
+      limit: 25,
+    }))
+    const events = [...(resp.events ?? [])].sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
+    for (const event of events) {
+      const lines = String(event.message ?? '').split('\n')
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const parsed = parseProgressLine(lines[i]?.trim() ?? '')
+        if (parsed) return parsed
+      }
+    }
+  } catch {}
   return undefined
 }
 
@@ -258,6 +281,10 @@ async function dispatch(input: WorkflowInput) {
     DocumentName: 'AWS-RunShellScript',
     Comment: `KernelBench benchmark run ${input.runId}`,
     TimeoutSeconds: timeoutSeconds,
+    CloudWatchOutputConfig: {
+      CloudWatchLogGroupName: SSM_OUTPUT_LOG_GROUP,
+      CloudWatchOutputEnabled: true,
+    },
     Parameters: { commands },
   }))
   const commandId = send.Command?.CommandId
@@ -287,7 +314,7 @@ async function poll(input: WorkflowInput) {
   const mapped = mapSsmStatus(inv.Status ?? 'Unknown')
   const responseCode = inv.ResponseCode ?? -1
   const isTerminal = TERMINAL_STATUSES.has(mapped)
-  const latestProgress = extractLatestProgress(inv.StandardOutputContent)
+  const latestProgress = extractLatestProgress(inv.StandardOutputContent) ?? await extractLatestProgressFromLogs(input.commandId, input.instanceId)
   if (!isTerminal) {
     const now = nowIso()
     let updateExpression = 'SET ssmStatus = :ssmStatus, updatedAt = :updatedAt, responseCode = :responseCode'
