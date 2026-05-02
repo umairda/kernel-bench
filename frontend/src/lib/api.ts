@@ -37,6 +37,8 @@ export type RunRecord = {
   createdAt?: string
   updatedAt?: string
   completedAt?: string
+  reason?: string
+  error?: string
   responseCode?: number
   ssmStatus?: string
   ssmTimeoutSeconds?: number

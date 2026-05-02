@@ -51,6 +51,10 @@ function isActiveStatus(status: RunRecord['status']) {
   return status === 'STARTING' || status === 'RUNNING'
 }
 
+function shouldShowFailureDetails(run: RunRecord) {
+  return (run.status === 'FAILED' || run.status === 'CANCELLED') && Boolean(run.reason || run.error)
+}
+
 function formatElapsed(createdAt?: string, endMs?: number) {
   if (!createdAt || typeof endMs !== 'number') {
     return null
@@ -152,6 +156,12 @@ export function RunStatusCard({
           <p>
             <span className="font-semibold text-zinc-700 dark:text-zinc-300">Status:</span> {run.status}{elapsed ? ` [${elapsed}]` : ''}
           </p>
+          {shouldShowFailureDetails(run) ? (
+            <div className="rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:border-red-400/50 dark:bg-red-900/30 dark:text-red-200">
+              {run.reason ? <p><span className="font-semibold">Reason:</span> {run.reason}</p> : null}
+              {run.error ? <p className={run.reason ? 'mt-1' : ''}><span className="font-semibold">Error:</span> {run.error}</p> : null}
+            </div>
+          ) : null}
           <p>
             <span className="font-semibold text-zinc-700 dark:text-zinc-300">Created:</span>{' '}
             {createdAt ? (

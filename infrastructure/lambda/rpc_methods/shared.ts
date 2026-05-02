@@ -287,7 +287,7 @@ function parseNumber(value: string | undefined): number | undefined {
   return Number.isFinite(n) ? n : undefined
 }
 
-function parseProgressLine(line: string): Record<string, any> | undefined {
+export function parseProgressLine(line: string): Record<string, any> | undefined {
   if (!line.startsWith(PROGRESS_PREFIX)) return undefined
   const body = line.slice(PROGRESS_PREFIX.length)
   const pairs = [...body.matchAll(/([a-zA-Z_]+)=("[^"]*"|\S+)/g)]
@@ -303,7 +303,7 @@ function parseProgressLine(line: string): Record<string, any> | undefined {
     fields[key] = value
   }
 
-  return {
+  return Object.fromEntries(Object.entries({
     op: fields.op,
     backend: fields.backend,
     status: fields.status,
@@ -318,7 +318,7 @@ function parseProgressLine(line: string): Record<string, any> | undefined {
     heartbeat: parseNumber(fields.heartbeat),
     detailed: parseNumber(fields.detailed),
     observedAt: nowIso(),
-  }
+  }).filter(([, value]) => value !== undefined))
 }
 
 export function extractLatestProgress(standardOutputContent?: string): Record<string, any> | undefined {

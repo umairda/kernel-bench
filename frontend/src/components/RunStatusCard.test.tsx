@@ -71,4 +71,50 @@ describe('RunStatusCard', () => {
 
     expect(screen.getByText('COMPLETED [4:10]', { exact: false })).toBeInTheDocument()
   })
+
+  it('shows failure reason and error details', () => {
+    render(
+      <RunStatusCard
+        title="CPU"
+        instanceState="stopped"
+        run={{
+          runId: 'run-failed',
+          status: 'FAILED',
+          benchmark: 'matrix-multiplication',
+          runner: 'cpu',
+          params: { inputRows: 10000, inputCols: 10000, outputCols: 10000 },
+          reason: 'WORKFLOW_STEP_EXCEPTION',
+          error: 'Pass options.removeUndefinedValues=true to remove undefined values from map/array/set.',
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Reason:', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText('WORKFLOW_STEP_EXCEPTION')).toBeInTheDocument()
+    expect(screen.getByText('Error:', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText(/removeUndefinedValues=true/)).toBeInTheDocument()
+  })
+
+  it('does not show failure details for completed runs', () => {
+    render(
+      <RunStatusCard
+        title="CPU"
+        instanceState="stopped"
+        run={{
+          runId: 'run-completed',
+          status: 'COMPLETED',
+          benchmark: 'vector',
+          runner: 'cpu',
+          params: { vectorLength: 100000 },
+          reason: 'STALE_REASON_SHOULD_NOT_SHOW',
+          error: 'stale error should not show',
+        }}
+      />,
+    )
+
+    expect(screen.queryByText('Reason:', { exact: false })).not.toBeInTheDocument()
+    expect(screen.queryByText('STALE_REASON_SHOULD_NOT_SHOW')).not.toBeInTheDocument()
+    expect(screen.queryByText('Error:', { exact: false })).not.toBeInTheDocument()
+    expect(screen.queryByText('stale error should not show')).not.toBeInTheDocument()
+  })
 })

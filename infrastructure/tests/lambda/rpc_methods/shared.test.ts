@@ -25,6 +25,21 @@ describe('rpc_methods/shared', () => {
     expect(() => shared.parseRunner('bad')).toThrow()
   })
 
+  it('parses progress lines without undefined fields', async () => {
+    const shared = await import('../../../lambda/rpc_methods/shared')
+    const progress = shared.parseProgressLine('KERNEL_BENCH_PROGRESS op=matmul backend=cpu status=running heartbeat=1 rows_done=81 total_rows=10000')
+
+    expect(progress).toMatchObject({
+      op: 'matmul',
+      backend: 'cpu',
+      status: 'running',
+      heartbeat: 1,
+      rowsDone: 81,
+      totalRows: 10000,
+    })
+    expect(Object.values(progress ?? {})).not.toContain(undefined)
+  })
+
   it('can release a runner lock without aborting in-flight workflow execution', async () => {
     const ddb = { send: vi.fn().mockResolvedValue(undefined) }
     const ssm = { send: vi.fn() }

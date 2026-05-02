@@ -53,7 +53,7 @@ function parseProgressLine(line: string): Record<string, any> | undefined {
     fields[key] = value
   }
 
-  return {
+  return Object.fromEntries(Object.entries({
     op: fields.op,
     backend: fields.backend,
     status: fields.status,
@@ -68,7 +68,7 @@ function parseProgressLine(line: string): Record<string, any> | undefined {
     heartbeat: parseNumber(fields.heartbeat),
     detailed: parseNumber(fields.detailed),
     observedAt: nowIso(),
-  }
+  }).filter(([, value]) => value !== undefined))
 }
 
 function extractLatestProgress(standardOutputContent?: string): Record<string, any> | undefined {

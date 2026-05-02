@@ -109,16 +109,8 @@ function useStickyDisplayedRun(current: RunRecord | undefined, latest: RunRecord
   useEffect(() => {
     if (preferred) {
       setStickyRun(preferred)
-      return
     }
-
-    if (!expectedRunId) {
-      setStickyRun(undefined)
-      return
-    }
-
-    setStickyRun((previous) => (previous?.runId === expectedRunId ? previous : undefined))
-  }, [expectedRunId, preferred])
+  }, [preferred])
 
   return preferred ?? stickyRun
 }
@@ -159,6 +151,7 @@ function App() {
   })
   const [appTab, setAppTab] = useState<AppTab>('run')
   const [activeRunTab, setActiveRunTab] = useState<BenchmarkTab>('vector')
+  const [hasHydratedInitialRunTab, setHasHydratedInitialRunTab] = useState(false)
   const [historyRunner, setHistoryRunner] = useState<Runner | 'all'>('all')
 
   const [vectorRuns, setVectorRuns] = useState<CompareRunState>(initialCompareState)
@@ -179,6 +172,9 @@ function App() {
     ...(inProgressRuns.data?.items ?? []),
     ...(runHistory.data?.items ?? []),
   ]), [inProgressRuns.data?.items, runHistory.data?.items])
+  const latestKnownRun = useMemo(() => {
+    return [...latestKnownRuns.values()].sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')))[0]
+  }, [latestKnownRuns])
 
   useEffect(() => {
     const activeItems = inProgressRuns.data?.items ?? []
@@ -186,11 +182,21 @@ function App() {
       return
     }
 
+    setHasHydratedInitialRunTab(true)
     const selectedTabHasActiveRun = activeItems.some((run) => benchmarkToTab(run.benchmark) === activeRunTab)
     if (!selectedTabHasActiveRun) {
       setActiveRunTab(benchmarkToTab(activeItems[0].benchmark))
     }
   }, [activeRunTab, inProgressRuns.data?.items])
+
+  useEffect(() => {
+    if (hasHydratedInitialRunTab || !latestKnownRun || (inProgressRuns.data?.items ?? []).length > 0) {
+      return
+    }
+
+    setActiveRunTab(benchmarkToTab(latestKnownRun.benchmark))
+    setHasHydratedInitialRunTab(true)
+  }, [hasHydratedInitialRunTab, inProgressRuns.data?.items, latestKnownRun])
 
   useEffect(() => {
     if (latestKnownRuns.size === 0) {
