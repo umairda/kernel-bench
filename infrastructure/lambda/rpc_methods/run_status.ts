@@ -32,7 +32,7 @@ export async function rpcRunStatus(rawParams: unknown) {
   }
 
   if (TERMINAL_STATUSES.has(item.status)) {
-    await releaseRunnerLock(item.runner, runId)
+    await releaseRunnerLock(item.runner, runId, { cancelInFlight: false })
     item = await attachPerformance(item)
     return publicRunView(item)
   }
@@ -115,7 +115,7 @@ export async function rpcRunStatus(rawParams: unknown) {
       updateExpression += ', completedAt = :completedAt'
       values[':completedAt'] = nowIso()
       await stopInstance(instanceId)
-      await releaseRunnerLock(item.runner, runId)
+      await releaseRunnerLock(item.runner, runId, { cancelInFlight: false })
       await emitTerminalMetrics(item, mapped)
     }
     await ddb.send(new UpdateCommand({

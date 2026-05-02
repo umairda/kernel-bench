@@ -84,8 +84,14 @@ export function createdTooOld(createdAt?: string): boolean {
   return (Date.now() - d.getTime()) / 1000 >= STARTING_STALE_SECONDS
 }
 
-export async function releaseRunnerLock(runner: string | undefined, runId: string) {
-  await cancelInFlightWorkForRun(runId)
+export async function releaseRunnerLock(
+  runner: string | undefined,
+  runId: string,
+  options: { cancelInFlight?: boolean } = {},
+) {
+  if (options.cancelInFlight ?? true) {
+    await cancelInFlightWorkForRun(runId)
+  }
   if (!runner) return
   try {
     await ddb.send(new DeleteCommand({
@@ -383,7 +389,7 @@ export async function reconcileRunningItem(item: Record<string, any>): Promise<R
       },
     }))
     await stopInstance(item.instanceId)
-    await releaseRunnerLock(item.runner, item.runId)
+    await releaseRunnerLock(item.runner, item.runId, { cancelInFlight: false })
     await emitTerminalMetrics(item, mapped)
     const latest = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId: item.runId } }))
     return (latest.Item as Record<string, any>) ?? item
