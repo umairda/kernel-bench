@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <chrono>
 
 namespace
 {
@@ -47,6 +48,8 @@ void run_main(int argc, char *argv[])
     std::vector<float> out;
 
     StatusCode status = StatusCode::InvalidArgument;
+    using Clock = std::chrono::steady_clock;
+    const auto op_start = Clock::now();
     switch (args.operation)
     {
     case CliOperation::Vector:
@@ -59,8 +62,16 @@ void run_main(int argc, char *argv[])
         status = run_convolution(args, out);
         break;
     }
+    const auto op_end = Clock::now();
+    const auto op_us = std::chrono::duration_cast<std::chrono::microseconds>(op_end - op_start).count();
+    const double op_ms = static_cast<double>(op_us) / 1000.0;
 
     print_operation_result(std::cout, status, out, args.dump_output_csv);
+    std::cout << "KERNEL_BENCH_METRICS "
+              << "kernel_ms=" << op_ms
+              << " total_ms=" << op_ms
+              << " status=" << to_string(status)
+              << std::endl;
 }
 } // namespace
 

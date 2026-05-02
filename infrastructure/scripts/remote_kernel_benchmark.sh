@@ -199,6 +199,7 @@ BUILD_SETUP_END_MS="$(now_ms)"
 BENCHMARK_PHASE_START_MS="$(now_ms)"
 python3 - <<'PY' "${RUNNER}" "${BENCHMARK}" "${PARAMS_FILE}" "${RESULTS_DIR}" "${RUN_ID}" "${COMPUTE_BIN}"
 import json
+import re
 import subprocess
 import sys
 import time
@@ -221,10 +222,20 @@ def run_and_capture(name, argv, op_type=None):
     output = subprocess.check_output(argv, text=True, stderr=subprocess.STDOUT)
     elapsed_ms = (time.perf_counter() - op_start) * 1000.0
     (results_dir / f"{name}.txt").write_text(output)
+    measured_ms = elapsed_ms
+    metrics_line = None
+    for line in output.splitlines():
+        if line.startswith("KERNEL_BENCH_METRICS "):
+            metrics_line = line
+    if metrics_line:
+        match = re.search(r"kernel_ms=([0-9]+(?:\\.[0-9]+)?)", metrics_line)
+        if match:
+            measured_ms = float(match.group(1))
     operations.append({
         "name": name,
         "operationType": op_type or name,
-        "durationMs": round(elapsed_ms, 3),
+        "durationMs": round(measured_ms, 3),
+        "wallDurationMs": round(elapsed_ms, 3),
         "command": argv,
     })
 
