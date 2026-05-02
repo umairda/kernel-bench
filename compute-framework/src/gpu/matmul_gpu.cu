@@ -3,6 +3,10 @@
 #include "framework/gpu_ops.hpp"
 #include "framework/cuda_utils.cuh"
 
+#include <chrono>
+#include <iostream>
+#include <sstream>
+
 namespace
 {
     __global__ void compute_row_kernel(
@@ -45,10 +49,28 @@ StatusCode gpu_matmul_op(
         return StatusCode::InvalidArgument;
     }
 
+    const auto op_start = std::chrono::steady_clock::now();
+
+    auto log_phase = [&](const char *phase, const char *detail)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        const auto elapsed_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - op_start).count();
+        std::ostringstream message;
+        message << "KERNEL_BENCH_PROGRESS "
+                << "op=matmul backend=gpu status=running phase=" << phase
+                << " elapsed_ms=" << elapsed_ms
+                << " detail=\"" << detail << "\"";
+        std::cout << message.str() << std::endl;
+    };
+
     if (a_rows == 0 || a_cols == 0 || b_rows == 0 || b_cols == 0)
     {
+        log_phase("done", "empty-shape fast path");
         return StatusCode::Success;
     }
+
+    log_phase("allocating", "allocating device buffers");
 
     float *d_a = nullptr;
     float *d_b = nullptr;
@@ -92,6 +114,8 @@ StatusCode gpu_matmul_op(
         return cuda_utils::to_status_code(err);
     }
 
+    log_phase("h2d", "copying A and B from host to device");
+
     // copy data from cpu memory to gpu memory
     err = cudaMemcpy(d_a, a.data(), a_bytes, cudaMemcpyHostToDevice);
     if (err != cudaSuccess)
@@ -113,6 +137,8 @@ StatusCode gpu_matmul_op(
         static_cast<unsigned int>((b_cols + threads.x - 1) / threads.x),
         static_cast<unsigned int>((a_rows + threads.y - 1) / threads.y));
 
+    log_phase("kernel-launch", "launching matmul kernel");
+
     // Each thread computes one output matrix element
     compute_row_kernel<<<blocks, threads>>>(d_a, d_b, a_rows, a_cols, b_cols, d_out);
 
@@ -124,12 +150,16 @@ StatusCode gpu_matmul_op(
         return launch_status;
     }
 
+    log_phase("kernel-sync", "waiting for kernel completion");
+
     const StatusCode sync_status = cuda_utils::synchronize_device();
     if (sync_status != StatusCode::Success)
     {
         free_all();
         return sync_status;
     }
+
+    log_phase("d2h", "copying output from device to host");
 
     // copy output data from gpu to cpu, free all gpu memory if there was an error copying data
     err = cudaMemcpy(out.data(), d_out, out_bytes, cudaMemcpyDeviceToHost);
@@ -141,6 +171,8 @@ StatusCode gpu_matmul_op(
 
     // free all memory allocated on gpu
     free_all();
+
+    log_phase("done", "matmul gpu operation completed");
 
     return StatusCode::Success;
 }
