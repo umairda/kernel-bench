@@ -10,6 +10,8 @@ import { writeHistoryRecord } from '../history'
 const RUNS_TABLE_NAME = process.env.RUNS_TABLE_NAME!
 const ARTIFACT_BUCKET_NAME = process.env.ARTIFACT_BUCKET_NAME!
 const SOURCE_ARCHIVE_KEY = process.env.SOURCE_ARCHIVE_KEY!
+const BASE_COMMAND_TIMEOUT_SECONDS = Number(process.env.BASE_COMMAND_TIMEOUT_SECONDS ?? String(90 * 60))
+const MAX_COMMAND_TIMEOUT_SECONDS = Number(process.env.MAX_COMMAND_TIMEOUT_SECONDS ?? String(6 * 60 * 60))
 
 type WorkflowInput = {
   action: 'START_AND_WAIT' | 'DISPATCH' | 'POLL' | 'FINALIZE' | 'FAIL'
@@ -77,6 +79,51 @@ function extractLatestProgress(standardOutputContent?: string): Record<string, a
     if (parsed) return parsed
   }
   return undefined
+}
+
+function clampTimeoutSeconds(seconds: number): number {
+  const s = Math.trunc(seconds)
+  if (!Number.isFinite(s) || s <= 0) return BASE_COMMAND_TIMEOUT_SECONDS
+  return Math.max(BASE_COMMAND_TIMEOUT_SECONDS, Math.min(MAX_COMMAND_TIMEOUT_SECONDS, s))
+}
+
+function computeCommandTimeoutSeconds(input: WorkflowInput): number {
+  if (input.benchmark === 'matrix-multiplication') {
+    const rows = Number(input.params.inputRows ?? 0)
+    const k = Number(input.params.inputCols ?? 0)
+    const outCols = Number(input.params.outputCols ?? 0)
+    const estimatedOps = rows * k * outCols
+
+    if (estimatedOps >= 1_000_000_000_000) return clampTimeoutSeconds(4 * 60 * 60)
+    if (estimatedOps >= 500_000_000_000) return clampTimeoutSeconds(3 * 60 * 60)
+    if (estimatedOps >= 100_000_000_000) return clampTimeoutSeconds(2 * 60 * 60)
+    return clampTimeoutSeconds(BASE_COMMAND_TIMEOUT_SECONDS)
+  }
+
+  if (input.benchmark === 'convolution') {
+    const n = Number(input.params.inputN ?? 0)
+    const cIn = Number(input.params.inputC ?? 0)
+    const hIn = Number(input.params.inputH ?? 0)
+    const wIn = Number(input.params.inputW ?? 0)
+    const cOut = Number(input.params.filterOutC ?? 0)
+    const kH = Number(input.params.filterH ?? 0)
+    const kW = Number(input.params.filterW ?? 0)
+    const strideH = Number(input.params.strideH ?? 1)
+    const strideW = Number(input.params.strideW ?? 1)
+    const padH = Number(input.params.padH ?? 0)
+    const padW = Number(input.params.padW ?? 0)
+    const outH = Math.floor((hIn + 2 * padH - kH) / Math.max(1, strideH)) + 1
+    const outW = Math.floor((wIn + 2 * padW - kW) / Math.max(1, strideW)) + 1
+    const estimatedOps = n * cOut * Math.max(0, outH) * Math.max(0, outW) * cIn * kH * kW
+
+    if (estimatedOps >= 300_000_000_000) return clampTimeoutSeconds(3 * 60 * 60)
+    if (estimatedOps >= 80_000_000_000) return clampTimeoutSeconds(2 * 60 * 60)
+    return clampTimeoutSeconds(BASE_COMMAND_TIMEOUT_SECONDS)
+  }
+
+  const vectorLength = Number(input.params.vectorLength ?? 0)
+  if (vectorLength >= 2_000_000_000) return clampTimeoutSeconds(2 * 60 * 60)
+  return clampTimeoutSeconds(BASE_COMMAND_TIMEOUT_SECONDS)
 }
 
 async function releaseRunnerLock(runner: string | undefined, runId: string) {
@@ -176,6 +223,7 @@ async function startAndWait(input: WorkflowInput) {
 }
 
 async function dispatch(input: WorkflowInput) {
+  const timeoutSeconds = computeCommandTimeoutSeconds(input)
   const paramsB64 = Buffer.from(JSON.stringify(input.params)).toString('base64')
   const launchTimingB64 = Buffer.from(JSON.stringify({
     ...(input.launchTiming ?? {}),
@@ -209,6 +257,7 @@ async function dispatch(input: WorkflowInput) {
     InstanceIds: [input.instanceId],
     DocumentName: 'AWS-RunShellScript',
     Comment: `KernelBench benchmark run ${input.runId}`,
+    TimeoutSeconds: timeoutSeconds,
     Parameters: { commands },
   }))
   const commandId = send.Command?.CommandId
@@ -217,11 +266,12 @@ async function dispatch(input: WorkflowInput) {
   await ddb.send(new UpdateCommand({
     TableName: RUNS_TABLE_NAME,
     Key: { runId: input.runId },
-    UpdateExpression: 'SET #status = :status, commandId = :commandId, startupProgress.#phase = :phase, startupProgress.detail = :detail, startupProgress.observedAt = :observedAt, updatedAt = :updatedAt REMOVE #error, #reason',
+    UpdateExpression: 'SET #status = :status, commandId = :commandId, ssmTimeoutSeconds = :ssmTimeoutSeconds, startupProgress.#phase = :phase, startupProgress.detail = :detail, startupProgress.observedAt = :observedAt, updatedAt = :updatedAt REMOVE #error, #reason',
     ExpressionAttributeNames: { '#status': 'status', '#phase': 'phase', '#error': 'error', '#reason': 'reason' },
     ExpressionAttributeValues: {
       ':status': 'RUNNING',
       ':commandId': commandId,
+      ':ssmTimeoutSeconds': timeoutSeconds,
       ':phase': 'COMMAND_DISPATCHED',
       ':detail': 'SSM command dispatched to runner instance',
       ':observedAt': nowIso(),

@@ -39,6 +39,7 @@ export type RunRecord = {
   completedAt?: string
   responseCode?: number
   ssmStatus?: string
+  ssmTimeoutSeconds?: number
   startupProgress?: {
     phase?: string
     ec2State?: string

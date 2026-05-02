@@ -146,6 +146,7 @@ export function publicRunView(item: Record<string, any>): Record<string, any> {
     completedAt: item.completedAt,
     ssmStatus: item.ssmStatus,
     responseCode: item.responseCode ?? -1,
+    ssmTimeoutSeconds: item.ssmTimeoutSeconds,
   }
   if (item.reason) out.reason = item.reason
   if (item.error) out.error = item.error

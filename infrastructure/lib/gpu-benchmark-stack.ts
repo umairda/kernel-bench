@@ -250,6 +250,8 @@ export class KernelBenchStack extends cdk.Stack {
         RUNS_TABLE_NAME: runsTable.tableName,
         ARTIFACT_BUCKET_NAME: artifactBucket.bucketName,
         SOURCE_ARCHIVE_KEY: props.sourceArchiveKey,
+        BASE_COMMAND_TIMEOUT_SECONDS: String(90 * 60),
+        MAX_COMMAND_TIMEOUT_SECONDS: String(6 * 60 * 60),
       },
     });
     const sweepStaleRunsFn = new lambdaNodejs.NodejsFunction(this, 'KernelBench-SweepStaleRunsFn', {
@@ -424,7 +426,7 @@ export class KernelBenchStack extends cdk.Stack {
     const runWorkflowStateMachine = new sfn.StateMachine(this, 'KernelBench-RunWorkflowStateMachine', {
       stateMachineName: `KernelBench-run-workflow-${region}`,
       definitionBody: sfn.DefinitionBody.fromChainable(workflowDefinition),
-      timeout: cdk.Duration.minutes(75),
+      timeout: cdk.Duration.hours(7),
     });
 
     rpcFn.addEnvironment('RUN_WORKFLOW_STATE_MACHINE_ARN', runWorkflowStateMachine.stateMachineArn);
