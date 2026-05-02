@@ -4,7 +4,7 @@ import { CancelCommandCommand, GetCommandInvocationCommand } from '@aws-sdk/clie
 import { DescribeExecutionCommand, StopExecutionCommand } from '@aws-sdk/client-sfn'
 import { DeleteCommand, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { ddb, ec2, putMetric, s3, sfn, ssm } from '../aws'
-import { JsonRpcError, TERMINAL_STATUSES, mapSsmStatus, normalizePerformance, nowIso, publicRunView } from '../common'
+import { JsonRpcError, TERMINAL_STATUSES, mapSsmStatus, normalizePerformance, nowIso, publicRunView, reasonFromSsm } from '../common'
 import { queryHistory, writeHistoryRecord } from '../history'
 
 export type Runner = 'cpu' | 'gpu'
@@ -165,11 +165,12 @@ export async function reconcileWorkflowTerminal(item: Record<string, any>): Prom
   await ddb.send(new UpdateCommand({
     TableName: RUNS_TABLE_NAME,
     Key: { runId: item.runId },
-    UpdateExpression: 'SET #status = :status, #error = :error, updatedAt = :updatedAt, completedAt = :completedAt',
+    UpdateExpression: 'SET #status = :status, #error = :error, reason = :reason, updatedAt = :updatedAt, completedAt = :completedAt',
     ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
     ExpressionAttributeValues: {
       ':status': mapped,
       ':error': reason,
+      ':reason': status === 'TIMED_OUT' ? 'WORKFLOW_TIMED_OUT' : status === 'ABORTED' ? 'WORKFLOW_ABORTED' : 'WORKFLOW_FAILED',
       ':updatedAt': now,
       ':completedAt': now,
     },
@@ -263,11 +264,12 @@ export async function reconcileRunningItem(item: Record<string, any>): Promise<R
     await ddb.send(new UpdateCommand({
       TableName: RUNS_TABLE_NAME,
       Key: { runId: item.runId },
-      UpdateExpression: 'SET #status = :status, #error = :error, updatedAt = :updatedAt, completedAt = :completedAt',
+      UpdateExpression: 'SET #status = :status, #error = :error, reason = :reason, updatedAt = :updatedAt, completedAt = :completedAt',
       ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
       ExpressionAttributeValues: {
         ':status': 'FAILED',
         ':error': `Run stuck in STARTING without command for > ${STARTING_STALE_SECONDS}s`,
+        ':reason': 'STARTING_STALE_NO_COMMAND',
         ':updatedAt': nowIso(),
         ':completedAt': nowIso(),
       },
@@ -291,11 +293,12 @@ export async function reconcileRunningItem(item: Record<string, any>): Promise<R
       await ddb.send(new UpdateCommand({
         TableName: RUNS_TABLE_NAME,
         Key: { runId: item.runId },
-        UpdateExpression: 'SET #status = :status, #error = :error, ssmStatus = :ssmStatus, updatedAt = :updatedAt, responseCode = :responseCode, completedAt = :completedAt',
+        UpdateExpression: 'SET #status = :status, #error = :error, reason = :reason, ssmStatus = :ssmStatus, updatedAt = :updatedAt, responseCode = :responseCode, completedAt = :completedAt',
         ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
         ExpressionAttributeValues: {
           ':status': 'FAILED',
           ':error': `Instance state is ${state} while SSM status is ${inv.Status ?? 'Unknown'}`,
+          ':reason': 'INSTANCE_STOPPING_WHILE_SSM_RUNNING',
           ':ssmStatus': inv.Status ?? 'Unknown',
           ':updatedAt': nowIso(),
           ':responseCode': inv.ResponseCode ?? -1,
@@ -311,10 +314,11 @@ export async function reconcileRunningItem(item: Record<string, any>): Promise<R
     await ddb.send(new UpdateCommand({
       TableName: RUNS_TABLE_NAME,
       Key: { runId: item.runId },
-      UpdateExpression: 'SET #status = :status, ssmStatus = :ssmStatus, updatedAt = :updatedAt, responseCode = :responseCode, completedAt = :completedAt',
+      UpdateExpression: 'SET #status = :status, reason = :reason, ssmStatus = :ssmStatus, updatedAt = :updatedAt, responseCode = :responseCode, completedAt = :completedAt',
       ExpressionAttributeNames: { '#status': 'status' },
       ExpressionAttributeValues: {
         ':status': mapped,
+        ':reason': reasonFromSsm(mapped, inv.Status ?? 'Unknown', inv.ResponseCode ?? -1),
         ':ssmStatus': inv.Status ?? 'Unknown',
         ':updatedAt': nowIso(),
         ':responseCode': inv.ResponseCode ?? -1,
@@ -336,4 +340,4 @@ export async function getState(instanceId: string) {
   return resp.Reservations?.[0]?.Instances?.[0]?.State?.Name ?? 'unknown'
 }
 
-export { ddb, ec2, ssm, mapSsmStatus, nowIso, publicRunView, queryHistory, JsonRpcError, putMetric, TERMINAL_STATUSES }
+export { ddb, ec2, ssm, mapSsmStatus, nowIso, publicRunView, queryHistory, JsonRpcError, putMetric, TERMINAL_STATUSES, reasonFromSsm }

@@ -19,6 +19,7 @@ import {
   getState,
   reconcileWorkflowTerminal,
   ssm,
+  reasonFromSsm,
 } from './shared'
 
 export async function rpcRunStatus(rawParams: unknown) {
@@ -51,11 +52,12 @@ export async function rpcRunStatus(rawParams: unknown) {
       await ddb.send(new UpdateCommand({
         TableName: RUNS_TABLE_NAME,
         Key: { runId },
-        UpdateExpression: 'SET #status = :status, #error = :error, updatedAt = :updatedAt, completedAt = :completedAt',
+        UpdateExpression: 'SET #status = :status, #error = :error, reason = :reason, updatedAt = :updatedAt, completedAt = :completedAt',
         ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
         ExpressionAttributeValues: {
           ':status': 'FAILED',
           ':error': `Run stuck in STARTING without command for > ${STARTING_STALE_SECONDS}s`,
+          ':reason': 'STARTING_STALE_NO_COMMAND',
           ':updatedAt': nowIso(),
           ':completedAt': nowIso(),
         },
@@ -76,11 +78,12 @@ export async function rpcRunStatus(rawParams: unknown) {
         await ddb.send(new UpdateCommand({
           TableName: RUNS_TABLE_NAME,
           Key: { runId },
-          UpdateExpression: 'SET #status = :status, #error = :error, ssmStatus = :ssmStatus, updatedAt = :updatedAt, responseCode = :responseCode, completedAt = :completedAt',
+          UpdateExpression: 'SET #status = :status, #error = :error, reason = :reason, ssmStatus = :ssmStatus, updatedAt = :updatedAt, responseCode = :responseCode, completedAt = :completedAt',
           ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
           ExpressionAttributeValues: {
             ':status': 'FAILED',
             ':error': `Instance state is ${state} while SSM status is ${inv.Status ?? 'Unknown'}`,
+            ':reason': 'INSTANCE_STOPPING_WHILE_SSM_RUNNING',
             ':ssmStatus': inv.Status ?? 'Unknown',
             ':updatedAt': nowIso(),
             ':responseCode': inv.ResponseCode ?? -1,
@@ -96,11 +99,12 @@ export async function rpcRunStatus(rawParams: unknown) {
     }
     const values: Record<string, any> = {
       ':status': mapped,
+      ':reason': reasonFromSsm(mapped, inv.Status ?? 'Unknown', inv.ResponseCode ?? -1),
       ':ssmStatus': inv.Status ?? 'Unknown',
       ':updatedAt': nowIso(),
       ':responseCode': inv.ResponseCode ?? -1,
     }
-    let updateExpression = 'SET #status = :status, ssmStatus = :ssmStatus, updatedAt = :updatedAt, responseCode = :responseCode'
+    let updateExpression = 'SET #status = :status, reason = :reason, ssmStatus = :ssmStatus, updatedAt = :updatedAt, responseCode = :responseCode'
     if (TERMINAL_STATUSES.has(mapped)) {
       updateExpression += ', completedAt = :completedAt'
       values[':completedAt'] = nowIso()

@@ -105,6 +105,19 @@ export function mapSsmStatus(ssmStatus: string): string {
   return 'FAILED'
 }
 
+export function reasonFromSsm(mapped: string, ssmStatus: string, responseCode: number): string {
+  if (mapped === 'COMPLETED') return 'COMPLETED_SUCCESS'
+  if (mapped === 'CANCELLED') {
+    if (ssmStatus === 'TimedOut') return 'SSM_COMMAND_TIMED_OUT'
+    return 'SSM_COMMAND_CANCELLED'
+  }
+  if (mapped === 'FAILED') {
+    if (responseCode === 137) return 'PROCESS_KILLED_OOM_OR_SIGNAL'
+    return 'SSM_COMMAND_FAILED'
+  }
+  return 'UNKNOWN'
+}
+
 export function normalizeOperationDurations(source: any): Array<{ name: string; durationMs: number }> {
   const sourceOps = Array.isArray(source?.operationDurations) ? source.operationDurations : (Array.isArray(source?.operations) ? source.operations : [])
   return sourceOps
@@ -134,6 +147,8 @@ export function publicRunView(item: Record<string, any>): Record<string, any> {
     ssmStatus: item.ssmStatus,
     responseCode: item.responseCode ?? -1,
   }
+  if (item.reason) out.reason = item.reason
+  if (item.error) out.error = item.error
   if (item.startupProgress && typeof item.startupProgress === 'object') {
     out.startupProgress = item.startupProgress
   }

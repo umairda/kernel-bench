@@ -4,7 +4,7 @@ import { DescribeInstanceStatusCommand, DescribeInstancesCommand, StartInstances
 import { DescribeInstanceInformationCommand, GetCommandInvocationCommand, SendCommandCommand } from '@aws-sdk/client-ssm'
 import { GetObjectCommand } from '@aws-sdk/client-s3'
 import { ddb, ec2, putMetric, s3, ssm } from '../aws'
-import { mapSsmStatus, normalizePerformance, nowIso, TERMINAL_STATUSES } from '../common'
+import { mapSsmStatus, normalizePerformance, nowIso, reasonFromSsm, TERMINAL_STATUSES } from '../common'
 import { writeHistoryRecord } from '../history'
 
 const RUNS_TABLE_NAME = process.env.RUNS_TABLE_NAME!
@@ -165,8 +165,8 @@ async function dispatch(input: WorkflowInput) {
   await ddb.send(new UpdateCommand({
     TableName: RUNS_TABLE_NAME,
     Key: { runId: input.runId },
-    UpdateExpression: 'SET #status = :status, commandId = :commandId, startupProgress.#phase = :phase, startupProgress.detail = :detail, startupProgress.observedAt = :observedAt, updatedAt = :updatedAt REMOVE #error',
-    ExpressionAttributeNames: { '#status': 'status', '#phase': 'phase', '#error': 'error' },
+    UpdateExpression: 'SET #status = :status, commandId = :commandId, startupProgress.#phase = :phase, startupProgress.detail = :detail, startupProgress.observedAt = :observedAt, updatedAt = :updatedAt REMOVE #error, #reason',
+    ExpressionAttributeNames: { '#status': 'status', '#phase': 'phase', '#error': 'error', '#reason': 'reason' },
     ExpressionAttributeValues: {
       ':status': 'RUNNING',
       ':commandId': commandId,
@@ -222,9 +222,16 @@ async function finalize(input: WorkflowInput) {
   await ddb.send(new UpdateCommand({
     TableName: RUNS_TABLE_NAME,
     Key: { runId: input.runId },
-    UpdateExpression: 'SET #status = :status, ssmStatus = :ssmStatus, responseCode = :responseCode, completedAt = :completedAt, updatedAt = :updatedAt REMOVE #error',
+    UpdateExpression: 'SET #status = :status, reason = :reason, ssmStatus = :ssmStatus, responseCode = :responseCode, completedAt = :completedAt, updatedAt = :updatedAt REMOVE #error',
     ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
-    ExpressionAttributeValues: { ':status': mapped, ':ssmStatus': ssmStatus, ':responseCode': responseCode, ':completedAt': now, ':updatedAt': now },
+    ExpressionAttributeValues: {
+      ':status': mapped,
+      ':reason': reasonFromSsm(mapped, ssmStatus, responseCode),
+      ':ssmStatus': ssmStatus,
+      ':responseCode': responseCode,
+      ':completedAt': now,
+      ':updatedAt': now,
+    },
   }))
   const performance = await attachPerformance(input.runId, input.s3Prefix)
   if (mapped === 'COMPLETED' && performance) {
@@ -252,9 +259,9 @@ async function fail(input: WorkflowInput, err: string) {
   await ddb.send(new UpdateCommand({
     TableName: RUNS_TABLE_NAME,
     Key: { runId: input.runId },
-    UpdateExpression: 'SET #status = :status, #error = :error, completedAt = :completedAt, updatedAt = :updatedAt',
+    UpdateExpression: 'SET #status = :status, #error = :error, reason = :reason, completedAt = :completedAt, updatedAt = :updatedAt',
     ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
-    ExpressionAttributeValues: { ':status': 'FAILED', ':error': err, ':completedAt': now, ':updatedAt': now },
+    ExpressionAttributeValues: { ':status': 'FAILED', ':error': err, ':reason': 'WORKFLOW_STEP_EXCEPTION', ':completedAt': now, ':updatedAt': now },
   }))
   try { await ec2.send(new StopInstancesCommand({ InstanceIds: [input.instanceId] })) } catch {}
   await releaseRunnerLock(input.runner, input.runId)
