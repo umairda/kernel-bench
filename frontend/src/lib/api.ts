@@ -73,6 +73,7 @@ export type RunRecord = {
       queueStartRequestMs?: number
       instanceBootSsmReadyMs?: number
       buildSetupMs?: number
+      gpuWarmupMs?: number
       benchmarkExecutionMs?: number
       uploadFinalizationMs?: number
     }

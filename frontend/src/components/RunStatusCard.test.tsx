@@ -35,6 +35,7 @@ describe('RunStatusCard', () => {
               queueStartRequestMs: 100,
               instanceBootSsmReadyMs: 1200,
               buildSetupMs: 600,
+              gpuWarmupMs: 180,
               benchmarkExecutionMs: 400,
               uploadFinalizationMs: 200,
             },
@@ -49,6 +50,8 @@ describe('RunStatusCard', () => {
     expect(screen.getByText('Startup Progress')).toBeInTheDocument()
     expect(screen.getByText('Waiting for instance checks')).toBeInTheDocument()
     expect(screen.getByText('Total Duration: 2.5 s')).toBeInTheDocument()
+    expect(screen.getByText('CUDA warmup')).toBeInTheDocument()
+    expect(screen.getByText('180 ms')).toBeInTheDocument()
     expect(screen.getByText('333 ms')).toBeInTheDocument()
   })
 

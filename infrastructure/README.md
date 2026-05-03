@@ -111,6 +111,8 @@ The bundle may include:
 - reuse cached binary for the same `sourceHash`
 - build locally on the runner if needed
 
+For GPU runs, the remote runner performs one tiny CUDA warmup command before timing the requested benchmark operations. This pays first-use CUDA driver/context startup separately and writes it as `phaseDurationsMs.gpuWarmupMs` in `performance.json`, so the first measured operation is not distorted by CUDA initialization.
+
 ## GPU AMI Strategy
 
 [prepare_gpu_ami.sh](/Users/umairansari/projects/gpu-compute-framework/infrastructure/scripts/prepare_gpu_ami.sh) is the bootstrap script used when baking a prepared GPU AMI.

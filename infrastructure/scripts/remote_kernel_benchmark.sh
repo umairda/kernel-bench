@@ -237,12 +237,24 @@ run_id = sys.argv[5]
 compute_bin = sys.argv[6]
 params = json.loads(params_path.read_text())
 backend = runner
-run_start = time.perf_counter()
 operations = []
+gpu_warmup_ms = None
+gpu_warmup_kernel_ms = None
 
 
-def run_and_capture(name, argv, op_type=None):
-    op_start = time.perf_counter()
+def parse_kernel_ms(output):
+    metrics_line = None
+    for line in output.splitlines():
+        if line.startswith("KERNEL_BENCH_METRICS "):
+            metrics_line = line
+    if not metrics_line:
+        return None
+
+    match = re.search(r"kernel_ms=([0-9]+(?:\.[0-9]+)?)", metrics_line)
+    return float(match.group(1)) if match else None
+
+
+def run_command(argv):
     output_lines = []
     proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     assert proc.stdout is not None
@@ -250,20 +262,40 @@ def run_and_capture(name, argv, op_type=None):
         print(line, end='', flush=True)
         output_lines.append(line)
     proc.wait()
-    if proc.returncode != 0:
-        raise subprocess.CalledProcessError(proc.returncode, argv, output=''.join(output_lines))
     output = ''.join(output_lines)
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, argv, output=output)
+    return output
+
+
+def run_gpu_warmup():
+    if runner != 'gpu':
+        return None, None
+
+    # Warm up CUDA before timed operations so first-use driver/context costs do not get charged to vector-add.
+    cmd = [
+        compute_bin,
+        '--op', 'vector',
+        '--backend', 'gpu',
+        '--vector-op', 'add',
+        '--length', '1',
+    ]
+    op_start = time.perf_counter()
+    output = run_command(cmd)
+    wall_ms = (time.perf_counter() - op_start) * 1000.0
+    (results_dir / "gpu_warmup.txt").write_text(output)
+    return round(wall_ms, 3), parse_kernel_ms(output)
+
+
+def run_and_capture(name, argv, op_type=None):
+    op_start = time.perf_counter()
+    output = run_command(argv)
     elapsed_ms = (time.perf_counter() - op_start) * 1000.0
     (results_dir / f"{name}.txt").write_text(output)
     measured_ms = elapsed_ms
-    metrics_line = None
-    for line in output.splitlines():
-        if line.startswith("KERNEL_BENCH_METRICS "):
-            metrics_line = line
-    if metrics_line:
-        match = re.search(r"kernel_ms=([0-9]+(?:\\.[0-9]+)?)", metrics_line)
-        if match:
-            measured_ms = float(match.group(1))
+    kernel_ms = parse_kernel_ms(output)
+    if kernel_ms is not None:
+        measured_ms = kernel_ms
     operations.append({
         "name": name,
         "operationType": op_type or name,
@@ -271,6 +303,10 @@ def run_and_capture(name, argv, op_type=None):
         "wallDurationMs": round(elapsed_ms, 3),
         "command": argv,
     })
+
+
+gpu_warmup_ms, gpu_warmup_kernel_ms = run_gpu_warmup()
+run_start = time.perf_counter()
 
 if benchmark == 'vector':
     length = int(params['vectorLength'])
@@ -337,6 +373,10 @@ benchmark_metrics = {
     "benchmarkExecutionMs": round(total_ms, 3),
     "operations": operations,
 }
+if gpu_warmup_ms is not None:
+    benchmark_metrics["gpuWarmupMs"] = gpu_warmup_ms
+if gpu_warmup_kernel_ms is not None:
+    benchmark_metrics["gpuWarmupKernelMs"] = round(gpu_warmup_kernel_ms, 3)
 (results_dir / "benchmark_metrics.json").write_text(json.dumps(benchmark_metrics, indent=2))
 PY
 BENCHMARK_PHASE_END_MS="$(now_ms)"
@@ -428,6 +468,7 @@ phase_durations = {
     "queueStartRequestMs": launch_timing.get("queueStartRequestMs"),
     "instanceBootSsmReadyMs": launch_timing.get("instanceBootSsmReadyMs"),
     "buildSetupMs": max(0, build_end - build_start),
+    "gpuWarmupMs": benchmark_metrics.get("gpuWarmupMs"),
     "benchmarkExecutionMs": benchmark_metrics.get("benchmarkExecutionMs", max(0, bench_end - bench_start)),
     "uploadFinalizationMs": max(0, fin_end - fin_start),
 }

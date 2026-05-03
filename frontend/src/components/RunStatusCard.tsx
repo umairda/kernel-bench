@@ -278,6 +278,12 @@ export function RunStatusCard({
                     <span>build/setup</span>
                     <span>{formatMilliseconds(phaseDurations.buildSetupMs)}</span>
                   </p>
+                  {typeof phaseDurations.gpuWarmupMs === 'number' ? (
+                    <p className="flex items-center justify-between gap-3 pl-3">
+                      <span>CUDA warmup</span>
+                      <span>{formatMilliseconds(phaseDurations.gpuWarmupMs)}</span>
+                    </p>
+                  ) : null}
                   <p className="flex items-center justify-between gap-3 pl-3">
                     <span>benchmark execution</span>
                     <span>{formatMilliseconds(phaseDurations.benchmarkExecutionMs)}</span>
