@@ -367,7 +367,7 @@ function App() {
 
         <div className="rounded-2xl border border-zinc-300/70 bg-white/80 p-2 dark:border-white/10 dark:bg-zinc-900/50">
           <div className="grid gap-2 md:grid-cols-3">
-            <HistoryTabButton active={appTab === 'run'} onClick={() => setAppTab('run')}>Run</HistoryTabButton>
+            <HistoryTabButton active={appTab === 'run'} onClick={() => setAppTab('run')}>Benchmark</HistoryTabButton>
             <HistoryTabButton active={appTab === 'performance'} onClick={() => setAppTab('performance')}>Performance</HistoryTabButton>
             <HistoryTabButton active={appTab === 'history'} onClick={() => setAppTab('history')}>History</HistoryTabButton>
           </div>
