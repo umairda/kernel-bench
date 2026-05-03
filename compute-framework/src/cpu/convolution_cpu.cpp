@@ -1,7 +1,21 @@
 #include "framework/cpu_ops.hpp"
 
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <iostream>
+#include <mutex>
+#include <sstream>
+#include <thread>
+#include <vector>
+
 namespace
 {
+    constexpr IndexType kMinOutputElementsPerWorker = 4096;
+    constexpr std::chrono::seconds kHeartbeatInterval(60);
+    constexpr std::chrono::minutes kDetailedInterval(5);
+
     /**
      *
      * N = batch size (number of samples/images)
@@ -21,6 +35,127 @@ namespace
         const IndexType width)
     {
         return (((n * channels + c) * height + h) * width + w);
+    }
+
+    void log_progress(
+        const IndexType completed_elements,
+        const IndexType total_elements,
+        const std::chrono::steady_clock::time_point op_start,
+        const bool detailed)
+    {
+        std::ostringstream heartbeat;
+        heartbeat << "KERNEL_BENCH_PROGRESS "
+                  << "op=convolution backend=cpu status=running heartbeat=1 "
+                  << "elements_done=" << completed_elements << " total_elements=" << total_elements;
+        std::cout << heartbeat.str() << std::endl;
+
+        if (!detailed)
+        {
+            return;
+        }
+
+        const auto now = std::chrono::steady_clock::now();
+        const double completed = static_cast<double>(completed_elements);
+        const double total = static_cast<double>(total_elements);
+        const double percent = (total > 0.0) ? (completed * 100.0 / total) : 100.0;
+
+        const auto elapsed_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - op_start).count();
+        const double elapsed_s = static_cast<double>(elapsed_ms) / 1000.0;
+        const double elements_per_s = (elapsed_s > 0.0) ? (completed / elapsed_s) : 0.0;
+        const double remaining_elements = total - completed;
+        const double eta_s = (elements_per_s > 0.0) ? (remaining_elements / elements_per_s) : -1.0;
+
+        std::ostringstream detail;
+        detail.setf(std::ios::fixed);
+        detail.precision(2);
+        detail << "KERNEL_BENCH_PROGRESS "
+               << "op=convolution backend=cpu status=running detailed=1 "
+               << "elements_done=" << completed_elements
+               << " total_elements=" << total_elements
+               << " percent=" << percent
+               << " elapsed_s=" << elapsed_s
+               << " eta_s=" << eta_s;
+        std::cout << detail.str() << std::endl;
+    }
+
+    template <typename Fn>
+    void parallel_for_range_with_progress(
+        const IndexType length,
+        const IndexType total_elements,
+        Fn fn)
+    {
+        if (length == 0)
+        {
+            return;
+        }
+
+        const auto op_start = std::chrono::steady_clock::now();
+        const unsigned int hardware_threads = std::thread::hardware_concurrency();
+        const IndexType available_workers = static_cast<IndexType>(hardware_threads == 0 ? 1 : hardware_threads);
+        const IndexType useful_workers = std::max<IndexType>(1, (length + kMinOutputElementsPerWorker - 1) / kMinOutputElementsPerWorker);
+        const IndexType worker_count = std::min<IndexType>(available_workers, useful_workers);
+
+        if (worker_count == 1)
+        {
+            fn(0, length);
+            return;
+        }
+
+        std::atomic<IndexType> completed_elements{0};
+        std::condition_variable progress_cv;
+        std::mutex progress_mutex;
+        const IndexType chunk = (length + worker_count - 1) / worker_count;
+        std::vector<std::thread> workers;
+        workers.reserve(static_cast<std::size_t>(worker_count));
+
+        for (IndexType worker = 0; worker < worker_count; ++worker)
+        {
+            const IndexType begin = worker * chunk;
+            const IndexType end = std::min<IndexType>(length, begin + chunk);
+            if (begin >= end)
+            {
+                continue;
+            }
+
+            workers.emplace_back([&, begin, end]()
+                                 {
+                                     const IndexType completed = fn(begin, end);
+                                     const IndexType done = completed_elements.fetch_add(completed, std::memory_order_relaxed) + completed;
+                                     if (done >= total_elements)
+                                     {
+                                         progress_cv.notify_one();
+                                     }
+                                 });
+        }
+
+        auto next_heartbeat = op_start + kHeartbeatInterval;
+        auto next_detailed = op_start + kDetailedInterval;
+        std::unique_lock<std::mutex> progress_lock(progress_mutex);
+        while (completed_elements.load(std::memory_order_relaxed) < total_elements)
+        {
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= next_heartbeat)
+            {
+                const IndexType elements_done = completed_elements.load(std::memory_order_relaxed);
+                const bool detailed = now >= next_detailed;
+                log_progress(elements_done, total_elements, op_start, detailed);
+                next_heartbeat = now + kHeartbeatInterval;
+                if (detailed)
+                {
+                    next_detailed = now + kDetailedInterval;
+                }
+            }
+
+            progress_cv.wait_until(progress_lock, next_heartbeat, [&]()
+                                   { return completed_elements.load(std::memory_order_relaxed) >= total_elements; });
+        }
+        progress_lock.unlock();
+
+        for (auto &worker : workers)
+        {
+            worker.join();
+        }
     }
 } // namespace
 
@@ -90,70 +225,78 @@ StatusCode cpu_convolution_op(
         return StatusCode::Success;
     }
 
-    // Essentially this is a cross-correlation between a sliding input patch and filter slice
-    // [Cin, Kh, Kw] = dimensions of input/filter patch, Cin = input channel, Kh/Kw = kernal height/width
+    const IndexType spatial_size = h_out * w_out;
+    const IndexType channel_plane_count = out_n * out_c;
 
-    // Naive convolution in NCHW layout:
-    // For each output element Y[n, c_out, out_y, out_x], compute:
-    // sum_{c_in, k_y, k_x}
-    //   X[n, c_in, out_y * stride_h + k_y - pad_h, out_x * stride_w + k_x - pad_w]
-    // * W[c_out, c_in, k_y, k_x]
-    for (IndexType batch = 0; batch < n; ++batch)
-    {
-        for (IndexType out_channel = 0; out_channel < c_out; ++out_channel)
+    parallel_for_range_with_progress(channel_plane_count, out_size, [&](const IndexType begin, const IndexType end)
+                                     {
+        IndexType completed = 0;
+        for (IndexType plane = begin; plane < end; ++plane)
         {
+            const IndexType batch = plane / out_c;
+            const IndexType out_channel = plane % out_c;
+            const IndexType input_batch_offset = batch * c_in * h_in * w_in;
+            const IndexType output_plane_offset = plane * spatial_size;
+            const IndexType filter_out_offset = out_channel * c_in * k_h * k_w;
+
             for (IndexType out_y = 0; out_y < h_out; ++out_y)
             {
+                const int input_y_origin =
+                    static_cast<int>(out_y * params.stride_height) -
+                    static_cast<int>(params.padding_height);
+                const IndexType kernel_y_begin =
+                    input_y_origin < 0 ? static_cast<IndexType>(-input_y_origin) : 0;
+                const IndexType kernel_y_end = std::min<IndexType>(
+                    k_h,
+                    h_in > static_cast<IndexType>(std::max(0, input_y_origin))
+                        ? h_in - static_cast<IndexType>(std::max(0, input_y_origin)) + kernel_y_begin
+                        : kernel_y_begin);
+
                 for (IndexType out_x = 0; out_x < w_out; ++out_x)
                 {
+                    const int input_x_origin =
+                        static_cast<int>(out_x * params.stride_width) -
+                        static_cast<int>(params.padding_width);
+                    const IndexType kernel_x_begin =
+                        input_x_origin < 0 ? static_cast<IndexType>(-input_x_origin) : 0;
+                    const IndexType kernel_x_end = std::min<IndexType>(
+                        k_w,
+                        w_in > static_cast<IndexType>(std::max(0, input_x_origin))
+                            ? w_in - static_cast<IndexType>(std::max(0, input_x_origin)) + kernel_x_begin
+                            : kernel_x_begin);
+
                     float sum = 0.0f;
 
                     for (IndexType in_channel = 0; in_channel < c_in; ++in_channel)
                     {
-                        for (IndexType kernel_y = 0; kernel_y < k_h; ++kernel_y)
+                        const IndexType input_channel_offset = input_batch_offset + in_channel * h_in * w_in;
+                        const IndexType filter_channel_offset = filter_out_offset + in_channel * k_h * k_w;
+
+                        for (IndexType kernel_y = kernel_y_begin; kernel_y < kernel_y_end; ++kernel_y)
                         {
-                            for (IndexType kernel_x = 0; kernel_x < k_w; ++kernel_x)
+                            const IndexType input_y = static_cast<IndexType>(input_y_origin + static_cast<int>(kernel_y));
+                            const IndexType input_row_offset = input_channel_offset + input_y * w_in;
+                            const IndexType filter_row_offset = filter_channel_offset + kernel_y * k_w;
+                            const IndexType input_x_start = static_cast<IndexType>(input_x_origin + static_cast<int>(kernel_x_begin));
+
+                            for (IndexType kernel_x = kernel_x_begin; kernel_x < kernel_x_end; ++kernel_x)
                             {
-                                // Map output location + kernel offset back into input coordinates.
-                                // Padding shifts this coordinate space.
-                                const int input_y =
-                                    static_cast<int>(out_y * params.stride_height + kernel_y) -
-                                    static_cast<int>(params.padding_height);
-                                const int input_x =
-                                    static_cast<int>(out_x * params.stride_width + kernel_x) -
-                                    static_cast<int>(params.padding_width);
-
-                                // Zero-padding behavior: out-of-bounds input contributes 0.
-                                if (input_y < 0 || input_x < 0 ||
-                                    input_y >= static_cast<int>(h_in) ||
-                                    input_x >= static_cast<int>(w_in))
-                                {
-                                    continue;
-                                }
-
-                                const IndexType input_idx = flatten_nchw(
-                                    batch,
-                                    in_channel,
-                                    static_cast<IndexType>(input_y),
-                                    static_cast<IndexType>(input_x),
-                                    c_in,
-                                    h_in,
-                                    w_in);
-                                // Filter is laid out as [c_out, c_in, k_h, k_w] in flat storage.
-                                const IndexType filter_idx = (((out_channel * c_in + in_channel) * k_h + kernel_y) * k_w + kernel_x);
-
+                                const IndexType input_idx = input_row_offset + input_x_start + (kernel_x - kernel_x_begin);
+                                const IndexType filter_idx = filter_row_offset + kernel_x;
                                 sum += input[input_idx] * filter[filter_idx];
                             }
                         }
                     }
 
-                    // Store Y[n, c_out, out_y, out_x].
-                    const IndexType out_idx = flatten_nchw(batch, out_channel, out_y, out_x, c_out, h_out, w_out);
-                    out[out_idx] = sum;
+                    out[output_plane_offset + out_y * w_out + out_x] = sum;
                 }
             }
+
+            completed += spatial_size;
         }
-    }
+
+        return completed;
+    });
 
     return StatusCode::Success;
 }
