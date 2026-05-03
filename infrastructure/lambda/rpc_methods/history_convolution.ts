@@ -1,8 +1,9 @@
+import { BENCHMARK_IDS } from '../benchmark_registry'
 import { asObject, parseRunner, queryHistory } from './shared'
 
 export async function rpcHistoryConvolution(rawParams: unknown) {
   const params = rawParams === undefined ? {} : asObject(rawParams)
-  const items = await queryHistory('convolution', parseRunner(params.runner))
+  const items = await queryHistory(BENCHMARK_IDS.convolution, parseRunner(params.runner))
   return {
     items: items.map((item) => ({
       runId: item.runId,

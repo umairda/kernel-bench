@@ -10,9 +10,11 @@ import {
   Runner,
   Benchmark,
   asObject,
+  benchmarkChoices,
   validateBenchmarkParams,
   acquireRunnerLock,
   getState,
+  isBenchmark,
   putMetric,
   runnerInstanceType,
 } from './shared'
@@ -33,8 +35,8 @@ export async function rpcStartRun(rawParams: unknown) {
   if (runner !== 'cpu' && runner !== 'gpu') {
     throw new JsonRpcError(-32602, 'runner must be one of: cpu, gpu')
   }
-  if (benchmark !== 'vector' && benchmark !== 'matrix-multiplication' && benchmark !== 'convolution') {
-    throw new JsonRpcError(-32602, 'benchmark must be one of: vector, matrix-multiplication, convolution')
+  if (!isBenchmark(benchmark)) {
+    throw new JsonRpcError(-32602, `benchmark must be one of: ${benchmarkChoices()}`)
   }
 
   const normalizedParams = validateBenchmarkParams(benchmark, asObject(payload.params))

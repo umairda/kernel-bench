@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Loader2, Play } from 'lucide-react'
+import { BENCHMARK_IDS } from '../benchmarks/benchmarkRegistry'
 import { type RunRecord, useStartRunMutation } from '../lib/api'
 import { NumberField } from './NumberField'
 import { RunStatusCard } from './RunStatusCard'
@@ -79,7 +80,7 @@ export function VectorSection({
                 onCpuStartError(null)
                 const result = await cpuStart.mutateAsync({
                   runner: 'cpu',
-                  benchmark: 'vector',
+                  benchmark: BENCHMARK_IDS.vector,
                   params: { vectorLength: params.vectorLength },
                 })
                 onCpuRunStarted(result.runId)
@@ -102,7 +103,7 @@ export function VectorSection({
                 onGpuStartError(null)
                 const result = await gpuStart.mutateAsync({
                   runner: 'gpu',
-                  benchmark: 'vector',
+                  benchmark: BENCHMARK_IDS.vector,
                   params: { vectorLength: params.vectorLength },
                 })
                 onGpuRunStarted(result.runId)

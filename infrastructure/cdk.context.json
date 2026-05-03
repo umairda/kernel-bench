@@ -7,5 +7,5 @@
     "us-east-1e",
     "us-east-1f"
   ],
-  "ami:account=065970809977:filters.architecture.0=x86_64:filters.image-type.0=machine:filters.name.0=NVIDIA GPU Cloud VMI Base*:filters.root-device-type.0=ebs:filters.state.0=available:filters.virtualization-type.0=hvm:owners.0=679593333241:owners.1=492681118881:region=us-east-1": "ami-059e868ce2e616dab"
+  "ami:account=065970809977:filters.architecture.0=x86_64:filters.image-type.0=machine:filters.name.0=Deep Learning Base AMI with Single CUDA (Ubuntu 24.04)*:filters.root-device-type.0=ebs:filters.state.0=available:filters.virtualization-type.0=hvm:owners.0=amazon:region=us-east-1": "ami-0795cbdb87e429036"
 }

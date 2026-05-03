@@ -10,7 +10,7 @@ export function SegmentedControl<T extends string>({
 }: {
   value: T
   onChange: (value: T) => void
-  options: Array<SegmentedOption<T>>
+  options: ReadonlyArray<SegmentedOption<T>>
 }) {
   return (
     <div className="inline-flex rounded-full border border-zinc-300/80 bg-white/85 p-1 shadow-sm dark:border-white/10 dark:bg-zinc-900/60">

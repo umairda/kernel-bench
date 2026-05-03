@@ -87,7 +87,7 @@ Primary key:
 
 - default instance type: `g6e.xlarge`
 - either:
-  - default Amazon Linux 2023 image with best-effort runtime GPU setup
+  - default Amazon-owned Deep Learning Base AMI with Single CUDA on Ubuntu 24.04
   - or a prepared custom AMI when `KERNELBENCH_GPU_AMI_ID` / `gpuAmiId` is supplied
 
 ### Why Both Still Use Source Bundles

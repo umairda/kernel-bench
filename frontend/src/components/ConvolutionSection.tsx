@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Loader2, Play } from 'lucide-react'
+import { BENCHMARK_IDS } from '../benchmarks/benchmarkRegistry'
 import { type RunRecord, useStartRunMutation } from '../lib/api'
 import { MemoryBudgetSummary } from './MemoryBudgetSummary'
 import { NumberField } from './NumberField'
@@ -166,7 +167,7 @@ export function ConvolutionSection({
                 onCpuStartError(null)
                 const result = await cpuStart.mutateAsync({
                   runner: 'cpu',
-                  benchmark: 'convolution',
+                  benchmark: BENCHMARK_IDS.convolution,
                   params,
                 })
                 onCpuRunStarted(result.runId)
@@ -189,7 +190,7 @@ export function ConvolutionSection({
                 onGpuStartError(null)
                 const result = await gpuStart.mutateAsync({
                   runner: 'gpu',
-                  benchmark: 'convolution',
+                  benchmark: BENCHMARK_IDS.convolution,
                   params,
                 })
                 onGpuRunStarted(result.runId)

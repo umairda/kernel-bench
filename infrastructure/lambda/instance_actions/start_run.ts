@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { StartExecutionCommand } from '@aws-sdk/client-sfn'
 import { ddb, putMetric, sfn } from '../aws'
+import { benchmarkChoices, isBenchmark, normalizeBenchmarkParams } from '../benchmark_registry'
 import { isOriginVerified, makeS3Prefix, nowIso, parseJsonBody, publicRunView, response, runTimestamp } from '../common'
 
 const RUNS_TABLE_NAME = process.env.RUNS_TABLE_NAME!
@@ -13,20 +14,10 @@ const GPU_INSTANCE_TYPE = process.env.GPU_INSTANCE_TYPE ?? 'g6e.xlarge'
 const RUN_WORKFLOW_STATE_MACHINE_ARN = process.env.RUN_WORKFLOW_STATE_MACHINE_ARN!
 const LOCK_TTL_SECONDS = Number(process.env.RUNNER_LOCK_TTL_SECONDS ?? '7200')
 
-function toInt(params: Record<string, any>, key: string, min = 1): number {
+function toInt(params: Record<string, unknown>, key: string, min = 1): number {
   const v = Number(params[key])
   if (!Number.isFinite(v) || v < min) throw new Error(`invalid integer parameter: ${key}`)
   return Math.trunc(v)
-}
-
-function validateParams(benchmark: string, params: Record<string, any>): Record<string, number> {
-  if (benchmark === 'vector') return { vectorLength: toInt(params, 'vectorLength', 1) }
-  if (benchmark === 'matrix-multiplication') return { inputRows: toInt(params, 'inputRows', 1), inputCols: toInt(params, 'inputCols', 1), outputCols: toInt(params, 'outputCols', 1) }
-  return {
-    inputN: toInt(params, 'inputN', 1), inputC: toInt(params, 'inputC', 1), inputH: toInt(params, 'inputH', 1), inputW: toInt(params, 'inputW', 1),
-    filterOutC: toInt(params, 'filterOutC', 1), filterH: toInt(params, 'filterH', 1), filterW: toInt(params, 'filterW', 1),
-    strideH: toInt(params, 'strideH', 1), strideW: toInt(params, 'strideW', 1), padH: toInt(params, 'padH', 0), padW: toInt(params, 'padW', 0),
-  }
 }
 
 async function acquireRunnerLock(runner: string, runId: string): Promise<{ ok: boolean; activeRunId?: string }> {
@@ -54,9 +45,9 @@ export async function handler(event: APIGatewayProxyEventV2) {
     const benchmark = payload.benchmark
     const params = payload.params ?? {}
     if (!['cpu', 'gpu'].includes(runner)) return response(400, { error: 'runner must be one of: cpu, gpu' })
-    if (!['vector', 'matrix-multiplication', 'convolution'].includes(benchmark)) return response(400, { error: 'benchmark must be one of: vector, matrix-multiplication, convolution' })
+    if (!isBenchmark(benchmark)) return response(400, { error: `benchmark must be one of: ${benchmarkChoices()}` })
 
-    const normalizedParams = validateParams(benchmark, params)
+    const normalizedParams = normalizeBenchmarkParams(benchmark, params, toInt)
     const runId = uuidv4()
     const createdAt = nowIso()
     const timestamp = runTimestamp()

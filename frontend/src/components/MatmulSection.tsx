@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Loader2, Play } from 'lucide-react'
+import { BENCHMARK_IDS } from '../benchmarks/benchmarkRegistry'
 import { type RunRecord, useStartRunMutation } from '../lib/api'
 import { MemoryBudgetSummary } from './MemoryBudgetSummary'
 import { NumberField } from './NumberField'
@@ -103,7 +104,7 @@ export function MatmulSection({
                 onCpuStartError(null)
                 const result = await cpuStart.mutateAsync({
                   runner: 'cpu',
-                  benchmark: 'matrix-multiplication',
+                  benchmark: BENCHMARK_IDS.matmul,
                   params,
                 })
                 onCpuRunStarted(result.runId)
@@ -126,7 +127,7 @@ export function MatmulSection({
                 onGpuStartError(null)
                 const result = await gpuStart.mutateAsync({
                   runner: 'gpu',
-                  benchmark: 'matrix-multiplication',
+                  benchmark: BENCHMARK_IDS.matmul,
                   params,
                 })
                 onGpuRunStarted(result.runId)

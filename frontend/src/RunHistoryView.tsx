@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
+import { benchmarkLabel } from './benchmarks/benchmarkRegistry'
 import { GlowCard } from './components/aceternity/glow-card'
 import { type RunHistoryRow, useGetRunHistoryQuery } from './lib/api'
 
@@ -12,13 +13,6 @@ function formatParams(params: Record<string, number> | undefined) {
 
 function resultLabel(status: RunHistoryRow['status']) {
   return status === 'COMPLETED' ? 'Success' : 'Failed'
-}
-
-function operationLabel(benchmark: RunHistoryRow['benchmark']) {
-  if (benchmark === 'matrix-multiplication') {
-    return 'Matrix Multiplication'
-  }
-  return benchmark.charAt(0).toUpperCase() + benchmark.slice(1)
 }
 
 function totalOperationDuration(run: RunHistoryRow) {
@@ -82,7 +76,7 @@ export default function RunHistoryView() {
         return compareValues(left.runner, right.runner, sortDirection)
       }
       if (sortKey === 'operation') {
-        return compareValues(operationLabel(left.benchmark), operationLabel(right.benchmark), sortDirection)
+        return compareValues(benchmarkLabel(left.benchmark), benchmarkLabel(right.benchmark), sortDirection)
       }
       if (sortKey === 'parameters') {
         return compareValues(formatParams(left.params), formatParams(right.params), sortDirection)
@@ -168,7 +162,7 @@ export default function RunHistoryView() {
                   <td className="px-3 py-3 font-mono text-xs text-zinc-800 dark:text-zinc-100">{row.runId}</td>
                   <td className="px-3 py-3 text-xs text-zinc-700 dark:text-zinc-200">{formatCreatedAt(row.createdAt)}</td>
                   <td className="px-3 py-3 uppercase text-zinc-700 dark:text-zinc-200">{row.runner}</td>
-                  <td className="px-3 py-3 text-zinc-700 dark:text-zinc-200">{operationLabel(row.benchmark)}</td>
+                  <td className="px-3 py-3 text-zinc-700 dark:text-zinc-200">{benchmarkLabel(row.benchmark)}</td>
                   <td className="px-3 py-3 font-mono text-xs text-zinc-600 dark:text-zinc-300 break-words whitespace-normal">{formatParams(row.params)}</td>
                   <td className="px-3 py-3 text-zinc-700 dark:text-zinc-200">{formatDuration(totalOperationDuration(row))}</td>
                   <td className="px-3 py-3">

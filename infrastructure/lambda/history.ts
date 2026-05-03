@@ -1,15 +1,15 @@
 import { PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb'
 import { ddb } from './aws'
+import { BENCHMARK_IDS, type Benchmark } from './benchmark_registry'
 import { normalizeOperationDurations } from './common'
 
 const HISTORY_TABLE_NAME = process.env.HISTORY_TABLE_NAME
 
 type HistoryRunner = 'cpu' | 'gpu'
-type HistoryBenchmark = 'vector' | 'matrix-multiplication' | 'convolution'
 
 type HistorySourceRun = {
   runId: string
-  benchmark: HistoryBenchmark
+  benchmark: Benchmark
   runner: HistoryRunner
   instanceType?: string
   params: Record<string, number>
@@ -32,13 +32,12 @@ function operationLookup(performance?: HistorySourceRun['performance']) {
 }
 
 function normalizeOperationName(name: string) {
+  if (name === BENCHMARK_IDS.matmul) return 'matmul'
   return name
     .replace(/^vector-/, '')
-    .replace(/^matrix-multiplication$/, 'matmul')
-    .replace(/^convolution$/, 'convolution')
 }
 
-function seriesKey(benchmark: HistoryBenchmark, runner: HistoryRunner) {
+function seriesKey(benchmark: Benchmark, runner: HistoryRunner) {
   return `${benchmark}#${runner}`
 }
 
@@ -54,7 +53,7 @@ export async function writeHistoryRecord(run: HistorySourceRun) {
   const params = run.params ?? {}
   const lookup = operationLookup(run.performance)
   const squareSize =
-    run.benchmark === 'matrix-multiplication' &&
+    run.benchmark === BENCHMARK_IDS.matmul &&
     params.inputRows === params.inputCols &&
     params.inputCols === params.outputCols
       ? params.inputRows
@@ -75,15 +74,15 @@ export async function writeHistoryRecord(run: HistorySourceRun) {
     opMs: lookup,
   }
 
-  if (run.benchmark === 'vector') {
+  if (run.benchmark === BENCHMARK_IDS.vector) {
     item.vectorLength = params.vectorLength
-  } else if (run.benchmark === 'matrix-multiplication') {
+  } else if (run.benchmark === BENCHMARK_IDS.matmul) {
     item.inputRows = params.inputRows
     item.inputCols = params.inputCols
     item.outputCols = params.outputCols
     item.isSquare = squareSize !== undefined
     item.squareSize = squareSize
-  } else if (run.benchmark === 'convolution') {
+  } else if (run.benchmark === BENCHMARK_IDS.convolution) {
     item.inputN = params.inputN
     item.inputC = params.inputC
     item.inputH = params.inputH
@@ -105,7 +104,7 @@ export async function writeHistoryRecord(run: HistorySourceRun) {
   }))
 }
 
-async function queryHistorySeries(benchmark: HistoryBenchmark, runner: HistoryRunner) {
+async function queryHistorySeries(benchmark: Benchmark, runner: HistoryRunner) {
   if (!HISTORY_TABLE_NAME) return []
   const result = await ddb.send(new QueryCommand({
     TableName: HISTORY_TABLE_NAME,
@@ -118,7 +117,7 @@ async function queryHistorySeries(benchmark: HistoryBenchmark, runner: HistoryRu
   return (result.Items ?? []) as Array<Record<string, any>>
 }
 
-export async function queryHistory(benchmark: HistoryBenchmark, runner?: HistoryRunner | 'all') {
+export async function queryHistory(benchmark: Benchmark, runner?: HistoryRunner | 'all') {
   const runners: HistoryRunner[] = runner && runner !== 'all' ? [runner] : ['cpu', 'gpu']
   const results = await Promise.all(runners.map((value) => queryHistorySeries(benchmark, value)))
   return results.flat().sort((a, b) => String(a.completedAt ?? '').localeCompare(String(b.completedAt ?? '')))

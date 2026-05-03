@@ -1,4 +1,5 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda'
+import { benchmarkS3ParameterKey, isBenchmark } from './benchmark_registry'
 
 export const TERMINAL_STATUSES = new Set(['COMPLETED', 'FAILED', 'CANCELLED'])
 export const JSON_RPC_VERSION = '2.0'
@@ -88,14 +89,10 @@ export function isOriginVerified(event: APIGatewayProxyEventV2): boolean {
 }
 
 export function makeS3Prefix(benchmark: string, params: Record<string, number>, timestamp: string, runner: string): string {
-  if (benchmark === 'vector') {
-    return `kernel-bench/vector/${params.vectorLength}/${timestamp}/${runner}/`
+  if (!isBenchmark(benchmark)) {
+    throw new Error(`unsupported benchmark: ${benchmark}`)
   }
-  if (benchmark === 'matrix-multiplication') {
-    return `kernel-bench/matrix-multiplication/${params.inputRows}-${params.inputCols}-${params.outputCols}/${timestamp}/${runner}/`
-  }
-  const key = `${params.inputN}-${params.inputC}-${params.inputH}-${params.inputW}-${params.filterOutC}-${params.filterH}-${params.filterW}-${params.strideH}-${params.strideW}-${params.padH}-${params.padW}`
-  return `kernel-bench/convolution/${key}/${timestamp}/${runner}/`
+  return `kernel-bench/${benchmark}/${benchmarkS3ParameterKey(benchmark, params)}/${timestamp}/${runner}/`
 }
 
 export function mapSsmStatus(ssmStatus: string): string {

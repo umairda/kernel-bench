@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Loader2, Moon, Sun } from 'lucide-react'
+import { BENCHMARK_IDS, BENCHMARK_TABS, benchmarkKey, benchmarkToTab, type BenchmarkTab } from './benchmarks/benchmarkRegistry'
 import { ConvolutionSection } from './components/ConvolutionSection'
 import { HistoryTabButton } from './components/HistoryTabButton'
 import { InProgressRunsCard } from './components/InProgressRunsCard'
@@ -25,7 +26,6 @@ type CompareRunState = {
 }
 
 type Theme = 'light' | 'dark'
-type BenchmarkTab = 'vector' | 'matmul' | 'conv'
 type AppTab = 'run' | 'performance' | 'history'
 const HistoricalView = lazy(() => import('./HistoricalView'))
 const RunHistoryView = lazy(() => import('./RunHistoryView'))
@@ -63,16 +63,6 @@ function sectionExecuting(runCpu?: RunRecord, runGpu?: RunRecord, cpuLaunching?:
     runGpu?.status === 'STARTING' ||
     runGpu?.status === 'RUNNING'
   )
-}
-
-function benchmarkToTab(benchmark: RunRecord['benchmark']): BenchmarkTab {
-  if (benchmark === 'matrix-multiplication') {
-    return 'matmul'
-  }
-  if (benchmark === 'convolution') {
-    return 'conv'
-  }
-  return 'vector'
 }
 
 function latestRunByKey(items: RunRecord[]) {
@@ -214,12 +204,12 @@ function App() {
       return
     }
 
-    const latestVectorCpu = latestKnownRuns.get('vector:cpu')
-    const latestVectorGpu = latestKnownRuns.get('vector:gpu')
-    const latestMatmulCpu = latestKnownRuns.get('matrix-multiplication:cpu')
-    const latestMatmulGpu = latestKnownRuns.get('matrix-multiplication:gpu')
-    const latestConvCpu = latestKnownRuns.get('convolution:cpu')
-    const latestConvGpu = latestKnownRuns.get('convolution:gpu')
+    const latestVectorCpu = latestKnownRuns.get(benchmarkKey(BENCHMARK_IDS.vector, 'cpu'))
+    const latestVectorGpu = latestKnownRuns.get(benchmarkKey(BENCHMARK_IDS.vector, 'gpu'))
+    const latestMatmulCpu = latestKnownRuns.get(benchmarkKey(BENCHMARK_IDS.matmul, 'cpu'))
+    const latestMatmulGpu = latestKnownRuns.get(benchmarkKey(BENCHMARK_IDS.matmul, 'gpu'))
+    const latestConvCpu = latestKnownRuns.get(benchmarkKey(BENCHMARK_IDS.convolution, 'cpu'))
+    const latestConvGpu = latestKnownRuns.get(benchmarkKey(BENCHMARK_IDS.convolution, 'gpu'))
 
     setVectorRuns((s) => {
       const nextCpuRunId = shouldAdoptRun(latestVectorCpu, vectorCpu.data) ? latestVectorCpu!.runId : s.cpuRunId
@@ -253,12 +243,12 @@ function App() {
     vectorGpu.data,
   ])
 
-  const displayedVectorCpu = useStickyDisplayedRun(vectorCpu.data, latestKnownRuns.get('vector:cpu'), vectorRuns.cpuRunId)
-  const displayedVectorGpu = useStickyDisplayedRun(vectorGpu.data, latestKnownRuns.get('vector:gpu'), vectorRuns.gpuRunId)
-  const displayedMatmulCpu = useStickyDisplayedRun(matmulCpu.data, latestKnownRuns.get('matrix-multiplication:cpu'), matmulRuns.cpuRunId)
-  const displayedMatmulGpu = useStickyDisplayedRun(matmulGpu.data, latestKnownRuns.get('matrix-multiplication:gpu'), matmulRuns.gpuRunId)
-  const displayedConvCpu = useStickyDisplayedRun(convCpu.data, latestKnownRuns.get('convolution:cpu'), convRuns.cpuRunId)
-  const displayedConvGpu = useStickyDisplayedRun(convGpu.data, latestKnownRuns.get('convolution:gpu'), convRuns.gpuRunId)
+  const displayedVectorCpu = useStickyDisplayedRun(vectorCpu.data, latestKnownRuns.get(benchmarkKey(BENCHMARK_IDS.vector, 'cpu')), vectorRuns.cpuRunId)
+  const displayedVectorGpu = useStickyDisplayedRun(vectorGpu.data, latestKnownRuns.get(benchmarkKey(BENCHMARK_IDS.vector, 'gpu')), vectorRuns.gpuRunId)
+  const displayedMatmulCpu = useStickyDisplayedRun(matmulCpu.data, latestKnownRuns.get(benchmarkKey(BENCHMARK_IDS.matmul, 'cpu')), matmulRuns.cpuRunId)
+  const displayedMatmulGpu = useStickyDisplayedRun(matmulGpu.data, latestKnownRuns.get(benchmarkKey(BENCHMARK_IDS.matmul, 'gpu')), matmulRuns.gpuRunId)
+  const displayedConvCpu = useStickyDisplayedRun(convCpu.data, latestKnownRuns.get(benchmarkKey(BENCHMARK_IDS.convolution, 'cpu')), convRuns.cpuRunId)
+  const displayedConvGpu = useStickyDisplayedRun(convGpu.data, latestKnownRuns.get(benchmarkKey(BENCHMARK_IDS.convolution, 'gpu')), convRuns.gpuRunId)
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
@@ -289,11 +279,7 @@ function App() {
         <SegmentedControl
           value={activeRunTab}
           onChange={setActiveRunTab}
-          options={[
-            { value: 'vector', label: 'Vector' },
-            { value: 'matmul', label: 'Matrix Multiplication' },
-            { value: 'conv', label: 'Convolution' },
-          ]}
+          options={BENCHMARK_TABS}
         />
       </div>
 

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { BENCHMARK_IDS, type Benchmark } from '../benchmarks/benchmarkRegistry'
 
 export type Runner = 'cpu' | 'gpu'
-export type Benchmark = 'vector' | 'matrix-multiplication' | 'convolution'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? ''
 const JSON_RPC_VERSION = '2.0'
@@ -150,9 +150,9 @@ export const queryKeys = {
   runStatus: (runId: string | null) => ['run-status', runId] as const,
   inProgressRuns: () => ['in-progress-runs'] as const,
   instanceStates: () => ['instance-states'] as const,
-  vectorHistory: (runner: Runner | 'all') => ['history', 'vector', runner] as const,
+  vectorHistory: (runner: Runner | 'all') => ['history', BENCHMARK_IDS.vector, runner] as const,
   matmulHistory: (runner: Runner | 'all') => ['history', 'matmul', runner] as const,
-  convolutionHistory: (runner: Runner | 'all') => ['history', 'convolution', runner] as const,
+  convolutionHistory: (runner: Runner | 'all') => ['history', BENCHMARK_IDS.convolution, runner] as const,
   runHistory: () => ['history', 'runs'] as const,
 }
 

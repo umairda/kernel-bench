@@ -5,6 +5,7 @@ import { FilterLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs'
 import { DescribeInstanceInformationCommand, GetCommandInvocationCommand, SendCommandCommand } from '@aws-sdk/client-ssm'
 import { GetObjectCommand } from '@aws-sdk/client-s3'
 import { cloudwatchLogs, ddb, ec2, putMetric, s3, ssm } from '../aws'
+import { estimateBenchmarkTimeoutSeconds, type Benchmark } from '../benchmark_registry'
 import { mapSsmStatus, normalizePerformance, nowIso, reasonFromSsm, TERMINAL_STATUSES } from '../common'
 import { writeHistoryRecord } from '../history'
 
@@ -20,7 +21,7 @@ type WorkflowInput = {
   runId: string
   runner: 'cpu' | 'gpu'
   instanceType?: string
-  benchmark: 'vector' | 'matrix-multiplication' | 'convolution'
+  benchmark: Benchmark
   params: Record<string, number>
   instanceId: string
   s3Prefix: string
@@ -104,49 +105,13 @@ async function extractLatestProgressFromLogs(commandId?: string, instanceId?: st
   return undefined
 }
 
-function clampTimeoutSeconds(seconds: number): number {
-  const s = Math.trunc(seconds)
-  if (!Number.isFinite(s) || s <= 0) return BASE_COMMAND_TIMEOUT_SECONDS
-  return Math.max(BASE_COMMAND_TIMEOUT_SECONDS, Math.min(MAX_COMMAND_TIMEOUT_SECONDS, s))
-}
-
 function computeCommandTimeoutSeconds(input: WorkflowInput): number {
-  if (input.benchmark === 'matrix-multiplication') {
-    const rows = Number(input.params.inputRows ?? 0)
-    const k = Number(input.params.inputCols ?? 0)
-    const outCols = Number(input.params.outputCols ?? 0)
-    const estimatedOps = rows * k * outCols
-
-    if (estimatedOps >= 1_000_000_000_000) return clampTimeoutSeconds(4 * 60 * 60)
-    if (estimatedOps >= 500_000_000_000) return clampTimeoutSeconds(3 * 60 * 60)
-    if (estimatedOps >= 100_000_000_000) return clampTimeoutSeconds(2 * 60 * 60)
-    return clampTimeoutSeconds(BASE_COMMAND_TIMEOUT_SECONDS)
-  }
-
-  if (input.benchmark === 'convolution') {
-    const n = Number(input.params.inputN ?? 0)
-    const cIn = Number(input.params.inputC ?? 0)
-    const hIn = Number(input.params.inputH ?? 0)
-    const wIn = Number(input.params.inputW ?? 0)
-    const cOut = Number(input.params.filterOutC ?? 0)
-    const kH = Number(input.params.filterH ?? 0)
-    const kW = Number(input.params.filterW ?? 0)
-    const strideH = Number(input.params.strideH ?? 1)
-    const strideW = Number(input.params.strideW ?? 1)
-    const padH = Number(input.params.padH ?? 0)
-    const padW = Number(input.params.padW ?? 0)
-    const outH = Math.floor((hIn + 2 * padH - kH) / Math.max(1, strideH)) + 1
-    const outW = Math.floor((wIn + 2 * padW - kW) / Math.max(1, strideW)) + 1
-    const estimatedOps = n * cOut * Math.max(0, outH) * Math.max(0, outW) * cIn * kH * kW
-
-    if (estimatedOps >= 300_000_000_000) return clampTimeoutSeconds(3 * 60 * 60)
-    if (estimatedOps >= 80_000_000_000) return clampTimeoutSeconds(2 * 60 * 60)
-    return clampTimeoutSeconds(BASE_COMMAND_TIMEOUT_SECONDS)
-  }
-
-  const vectorLength = Number(input.params.vectorLength ?? 0)
-  if (vectorLength >= 2_000_000_000) return clampTimeoutSeconds(2 * 60 * 60)
-  return clampTimeoutSeconds(BASE_COMMAND_TIMEOUT_SECONDS)
+  return estimateBenchmarkTimeoutSeconds(
+    input.benchmark,
+    input.params,
+    BASE_COMMAND_TIMEOUT_SECONDS,
+    MAX_COMMAND_TIMEOUT_SECONDS,
+  )
 }
 
 async function releaseRunnerLock(runner: string | undefined, runId: string) {

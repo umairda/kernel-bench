@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { formatBenchmarkParams } from '../benchmarks/benchmarkRegistry'
 import { GlowCard } from './aceternity/glow-card'
 import type { RunRecord } from '../lib/api'
 
@@ -98,17 +99,6 @@ function fallbackPerformance(run: RunRecord) {
   } satisfies NonNullable<RunRecord['performance']>
 }
 
-function formatRunParams(run: RunRecord): string {
-  const p = run.params ?? {}
-  if (run.benchmark === 'vector') {
-    return `n=${formatInteger(Number(p.vectorLength ?? 0))}`
-  }
-  if (run.benchmark === 'matrix-multiplication') {
-    return `${formatInteger(Number(p.inputRows ?? 0))}x${formatInteger(Number(p.inputCols ?? 0))} * ${formatInteger(Number(p.inputCols ?? 0))}x${formatInteger(Number(p.outputCols ?? 0))}`
-  }
-  return `N${p.inputN ?? '?'} C${p.inputC ?? '?'} H${p.inputH ?? '?'} W${p.inputW ?? '?'} | K${p.filterOutC ?? '?'} ${p.filterH ?? '?'}x${p.filterW ?? '?'} s${p.strideH ?? '?'} p${p.padH ?? '?'}`
-}
-
 function getInstanceStateBadgeClasses(state: string) {
   switch (state.toLowerCase()) {
     case 'stopped':
@@ -194,7 +184,7 @@ export function RunStatusCard({
             ) : 'n/a'}
           </p>
           <p>
-            <span className="font-semibold text-zinc-700 dark:text-zinc-300">Parameters:</span> {formatRunParams(run)}
+            <span className="font-semibold text-zinc-700 dark:text-zinc-300">Parameters:</span> {formatBenchmarkParams(run.benchmark, run.params)}
           </p>
           {run.status === 'STARTING' && run.startupProgress ? (
             <div className="rounded-md border border-zinc-300 bg-zinc-100 p-3 text-xs dark:border-white/10 dark:bg-zinc-950">

@@ -189,8 +189,8 @@ export class KernelBenchStack extends cdk.Stack {
     const gpuMachineImage = props.gpuAmiId
       ? ec2.MachineImage.genericLinux({ [region]: props.gpuAmiId })
       : ec2.MachineImage.lookup({
-        name: 'NVIDIA GPU Cloud VMI Base*',
-        owners: ['679593333241', '492681118881'],
+        name: 'Deep Learning Base AMI with Single CUDA (Ubuntu 24.04)*',
+        owners: ['amazon'],
         filters: {
           architecture: ['x86_64'],
           'root-device-type': ['ebs'],
@@ -817,8 +817,16 @@ export class KernelBenchStack extends cdk.Stack {
     userData.addCommands('set -euxo pipefail');
     if (args.assumePreparedImage) {
       userData.addCommands(
+        'if command -v dnf >/dev/null 2>&1; then',
+        '  dnf install -y git cmake gcc gcc-c++ make tar gzip unzip jq awscli python3 amazon-cloudwatch-agent || true',
+        'elif command -v apt-get >/dev/null 2>&1; then',
+        '  DEBIAN_FRONTEND=noninteractive apt-get update -y',
+        '  DEBIAN_FRONTEND=noninteractive apt-get install -y git cmake build-essential make tar gzip unzip jq awscli python3 || true',
+        'fi',
         'mkdir -p /opt/kernel-bench',
-        'chown ec2-user:ec2-user /opt/kernel-bench',
+        'RUNNER_USER="$(id -nu 1000 2>/dev/null || echo root)"',
+        'RUNNER_GROUP="$(id -ng "${RUNNER_USER}" 2>/dev/null || echo root)"',
+        'chown "${RUNNER_USER}:${RUNNER_GROUP}" /opt/kernel-bench || true',
       );
     } else {
       userData.addCommands(
@@ -829,6 +837,7 @@ export class KernelBenchStack extends cdk.Stack {
       );
     }
     userData.addCommands(
+      'if [ -d /opt/aws/amazon-cloudwatch-agent/etc ]; then',
       "cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CWAGENT'",
       '{',
       '  "metrics": {',
@@ -854,6 +863,7 @@ export class KernelBenchStack extends cdk.Stack {
       '}',
       'CWAGENT',
       '/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s || true',
+      'fi',
     );
 
     if (args.installGpuDrivers && !args.assumePreparedImage) {
