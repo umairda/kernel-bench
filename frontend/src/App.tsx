@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Moon, Sun } from 'lucide-react'
 import { BENCHMARK_IDS, BENCHMARK_TABS, benchmarkKey, benchmarkToTab, type BenchmarkTab } from './benchmarks/benchmarkRegistry'
 import { ConvolutionSection } from './components/ConvolutionSection'
@@ -142,6 +142,7 @@ function App() {
   const [appTab, setAppTab] = useState<AppTab>('run')
   const [activeRunTab, setActiveRunTab] = useState<BenchmarkTab>('vector')
   const [hasHydratedInitialRunTab, setHasHydratedInitialRunTab] = useState(false)
+  const lastFocusedActiveRunKey = useRef<string | null>(null)
   const [historyRunner, setHistoryRunner] = useState<Runner | 'all'>('all')
 
   const [vectorRuns, setVectorRuns] = useState<CompareRunState>(initialCompareState)
@@ -180,8 +181,15 @@ function App() {
   useEffect(() => {
     const activeItems = inProgressRuns.data?.items ?? []
     if (activeItems.length === 0) {
+      lastFocusedActiveRunKey.current = null
       return
     }
+
+    const activeRunKey = activeItems.map((run) => run.runId).sort().join('|')
+    if (lastFocusedActiveRunKey.current === activeRunKey) {
+      return
+    }
+    lastFocusedActiveRunKey.current = activeRunKey
 
     setHasHydratedInitialRunTab(true)
     const selectedTabHasActiveRun = activeItems.some((run) => benchmarkToTab(run.benchmark) === activeRunTab)
