@@ -12,7 +12,33 @@ RUN_ID="$4"
 BUCKET_NAME="$5"
 S3_PREFIX="$6"
 LAUNCH_TIMING_B64="${7:-}"
-INSTANCE_ID="$(curl -sS http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || true)"
+IMDS_TOKEN=""
+
+metadata_token() {
+  if [[ -z "${IMDS_TOKEN}" ]]; then
+    IMDS_TOKEN="$(curl -sS --connect-timeout 1 --max-time 2 \
+      -X PUT "http://169.254.169.254/latest/api/token" \
+      -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" 2>/dev/null || true)"
+  fi
+  printf '%s' "${IMDS_TOKEN}"
+}
+
+metadata_get() {
+  local path="$1"
+  local token
+  token="$(metadata_token)"
+  if [[ -n "${token}" ]]; then
+    curl -sS --connect-timeout 1 --max-time 2 \
+      -H "X-aws-ec2-metadata-token: ${token}" \
+      "http://169.254.169.254/latest/meta-data/${path}" 2>/dev/null || true
+    return 0
+  fi
+
+  curl -sS --connect-timeout 1 --max-time 2 \
+    "http://169.254.169.254/latest/meta-data/${path}" 2>/dev/null || true
+}
+
+INSTANCE_ID="$(metadata_get instance-id)"
 
 stop_instance_on_exit() {
   local code=$?
@@ -110,9 +136,25 @@ ensure_cuda_toolkit_for_gpu() {
     return 0
   fi
 
-  if command -v nvcc >/dev/null 2>&1; then
-    CUDA_NVCC_PATH="$(command -v nvcc)"
-    CUDA_ROOT="$(dirname "$(dirname "${CUDA_NVCC_PATH}")")"
+  find_nvcc() {
+    if command -v nvcc >/dev/null 2>&1; then
+      CUDA_NVCC_PATH="$(command -v nvcc)"
+      CUDA_ROOT="$(dirname "$(dirname "${CUDA_NVCC_PATH}")")"
+      return 0
+    fi
+
+    for candidate in /usr/local/cuda/bin/nvcc /usr/local/cuda-*/bin/nvcc /opt/cuda/bin/nvcc; do
+      if [[ -x "${candidate}" ]]; then
+        CUDA_NVCC_PATH="${candidate}"
+        CUDA_ROOT="$(dirname "$(dirname "${CUDA_NVCC_PATH}")")"
+        return 0
+      fi
+    done
+
+    return 1
+  }
+
+  if find_nvcc; then
     return 0
   fi
 
@@ -136,25 +178,7 @@ ensure_cuda_toolkit_for_gpu() {
     exit 2
   fi
 
-  if command -v nvcc >/dev/null 2>&1; then
-    CUDA_NVCC_PATH="$(command -v nvcc)"
-    CUDA_ROOT="$(dirname "$(dirname "${CUDA_NVCC_PATH}")")"
-    return 0
-  fi
-
-  for candidate in /usr/local/cuda/bin/nvcc /usr/local/cuda-*/bin/nvcc /opt/cuda/bin/nvcc; do
-    if [[ -x "${candidate}" ]]; then
-      CUDA_NVCC_PATH="${candidate}"
-      CUDA_ROOT="$(dirname "$(dirname "${CUDA_NVCC_PATH}")")"
-      break
-    fi
-  done
-
-  if [[ -n "${CUDA_NVCC_PATH}" && -x "${CUDA_NVCC_PATH}" ]]; then
-    return 0
-  fi
-
-  if command -v nvcc >/dev/null 2>&1; then
+  if find_nvcc; then
     return 0
   fi
 
@@ -343,7 +367,7 @@ if command -v nvidia-smi >/dev/null 2>&1; then
     GPU_UTIL="$(echo "${GPU_ROW}" | cut -d',' -f1 | xargs)"
     GPU_MEM_USED="$(echo "${GPU_ROW}" | cut -d',' -f2 | xargs)"
     GPU_MEM_TOTAL="$(echo "${GPU_ROW}" | cut -d',' -f3 | xargs)"
-    INSTANCE_ID="$(curl -sS http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || true)"
+    INSTANCE_ID="$(metadata_get instance-id)"
     if [[ -n "${INSTANCE_ID}" ]] && command -v aws >/dev/null 2>&1; then
       aws cloudwatch put-metric-data \
         --namespace "KernelBench/Runner" \
