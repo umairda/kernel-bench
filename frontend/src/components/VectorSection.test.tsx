@@ -46,4 +46,26 @@ describe('VectorSection', () => {
     expect(onCpuStartError).toHaveBeenCalledWith(null)
     expect(onCpuRunStarted).toHaveBeenCalledWith('cpu-vector-1')
   })
+
+  it('shows vector memory requirements and runner budget warnings', () => {
+    vi.mocked(useStartRunMutation).mockReturnValue({ isPending: false, mutateAsync: vi.fn() } as never)
+
+    render(
+      <VectorSection
+        cpuState="stopped"
+        gpuState="stopped"
+        onCpuRunStarted={vi.fn()}
+        onGpuRunStarted={vi.fn()}
+        onCpuStartError={vi.fn()}
+        onGpuStartError={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('Input A:', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText('Input B:', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText('Output:', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText('Total:', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText(/CPU \(c7i\.8xlarge system RAM\)/)).toBeInTheDocument()
+    expect(screen.getByText(/GPU \(L40S VRAM\)/)).toBeInTheDocument()
+  })
 })

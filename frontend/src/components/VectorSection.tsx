@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react'
 import { Loader2, Play } from 'lucide-react'
 import { BENCHMARK_IDS } from '../benchmarks/benchmarkRegistry'
 import { type RunRecord, useStartRunMutation } from '../lib/api'
+import { MemoryBudgetSummary } from './MemoryBudgetSummary'
 import { NumberField } from './NumberField'
 import { RunStatusCard } from './RunStatusCard'
 import { ShimmerButton } from './aceternity/shimmer-button'
 
 type VectorParams = { vectorLength: number }
 const DEFAULT_VECTOR_PARAMS: VectorParams = { vectorLength: 100000 }
+const BYTES_PER_FLOAT32 = 4
 
 function numberParam(params: Record<string, number> | undefined, key: keyof VectorParams, fallback: number) {
   const value = params?.[key]
@@ -61,6 +63,11 @@ export function VectorSection({
   const gpuLaunching = gpuStart.isPending
   const isCpuExecuting = cpuLaunching || cpuRun?.status === 'STARTING' || cpuRun?.status === 'RUNNING'
   const isGpuExecuting = gpuLaunching || gpuRun?.status === 'STARTING' || gpuRun?.status === 'RUNNING'
+  const safeVectorLength = valid ? params.vectorLength : 0
+  const bytesInputA = safeVectorLength * BYTES_PER_FLOAT32
+  const bytesInputB = safeVectorLength * BYTES_PER_FLOAT32
+  const bytesOutput = safeVectorLength * BYTES_PER_FLOAT32
+  const bytesTotal = bytesInputA + bytesInputB + bytesOutput
 
   return (
     <div className="rounded-2xl border border-zinc-300/70 bg-white/80 px-5 py-5 dark:border-white/10 dark:bg-zinc-900/50">
@@ -71,6 +78,14 @@ export function VectorSection({
         <div className="grid gap-3 md:grid-cols-3">
           <NumberField label="Vector Length" min={1} value={params.vectorLength} onChange={(value) => setParams({ vectorLength: value })} />
         </div>
+        <MemoryBudgetSummary
+          items={[
+            { label: 'Input A', bytes: bytesInputA },
+            { label: 'Input B', bytes: bytesInputB },
+            { label: 'Output', bytes: bytesOutput },
+          ]}
+          totalBytes={bytesTotal}
+        />
         <div className="flex flex-wrap gap-3">
           <ShimmerButton
             title={cpuTitle}

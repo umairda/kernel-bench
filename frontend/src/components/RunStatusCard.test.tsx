@@ -98,6 +98,63 @@ describe('RunStatusCard', () => {
     expect(screen.getByText(/removeUndefinedValues=true/)).toBeInTheDocument()
   })
 
+  it('shows vector element progress', () => {
+    render(
+      <RunStatusCard
+        title="CPU"
+        instanceState="running"
+        run={{
+          runId: 'run-vector-progress',
+          status: 'RUNNING',
+          benchmark: 'vector',
+          runner: 'cpu',
+          params: { vectorLength: 10000000 },
+          progress: {
+            op: 'vector-add',
+            backend: 'cpu',
+            status: 'running',
+            elementsDone: 1000000,
+            totalElements: 10000000,
+            percent: 10,
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Execution Progress')).toBeInTheDocument()
+    expect(screen.getByText('vector-add')).toBeInTheDocument()
+    expect(screen.getByText('1,000,000 / 10,000,000')).toBeInTheDocument()
+    expect(screen.getByText('10.00%')).toBeInTheDocument()
+  })
+
+  it('shows row progress for matrix runs', () => {
+    render(
+      <RunStatusCard
+        title="CPU"
+        instanceState="running"
+        run={{
+          runId: 'run-row-progress',
+          status: 'RUNNING',
+          benchmark: 'matrix-multiplication',
+          runner: 'cpu',
+          params: { inputRows: 10000, inputCols: 10000, outputCols: 10000 },
+          progress: {
+            op: 'matmul',
+            backend: 'cpu',
+            status: 'running',
+            rowsDone: 125,
+            totalRows: 10000,
+            percent: 1.25,
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('rows')).toBeInTheDocument()
+    expect(screen.getByText('125 / 10,000')).toBeInTheDocument()
+    expect(screen.getByText('1.25%')).toBeInTheDocument()
+  })
+
   it('shows a fallback duration section for failed runs without performance data', () => {
     render(
       <RunStatusCard

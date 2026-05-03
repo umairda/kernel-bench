@@ -223,10 +223,28 @@ export function RunStatusCard({
                 <span>phase</span>
                 <span>{run.progress.phase ?? 'running'}</span>
               </p>
+              {run.progress.op ? (
+                <p className="flex items-center justify-between gap-3">
+                  <span>operation</span>
+                  <span>{run.progress.op}</span>
+                </p>
+              ) : null}
+              {run.progress.backend ? (
+                <p className="flex items-center justify-between gap-3">
+                  <span>backend</span>
+                  <span>{run.progress.backend}</span>
+                </p>
+              ) : null}
               {typeof run.progress.rowsDone === 'number' && typeof run.progress.totalRows === 'number' ? (
                 <p className="flex items-center justify-between gap-3">
                   <span>rows</span>
                   <span>{formatInteger(run.progress.rowsDone)} / {formatInteger(run.progress.totalRows)}</span>
+                </p>
+              ) : null}
+              {typeof run.progress.elementsDone === 'number' && typeof run.progress.totalElements === 'number' ? (
+                <p className="flex items-center justify-between gap-3">
+                  <span>elements</span>
+                  <span>{formatInteger(run.progress.elementsDone)} / {formatInteger(run.progress.totalElements)}</span>
                 </p>
               ) : null}
               {typeof run.progress.percent === 'number' ? (

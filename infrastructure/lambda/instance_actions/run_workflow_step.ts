@@ -62,6 +62,8 @@ function parseProgressLine(line: string): Record<string, any> | undefined {
     detail: fields.detail,
     rowsDone: parseNumber(fields.rows_done),
     totalRows: parseNumber(fields.total_rows),
+    elementsDone: parseNumber(fields.elements_done),
+    totalElements: parseNumber(fields.total_elements),
     percent: parseNumber(fields.percent),
     elapsedMs: parseNumber(fields.elapsed_ms),
     elapsedS: parseNumber(fields.elapsed_s),

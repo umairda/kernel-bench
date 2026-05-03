@@ -59,6 +59,8 @@ export type RunRecord = {
     detail?: string
     rowsDone?: number
     totalRows?: number
+    elementsDone?: number
+    totalElements?: number
     percent?: number
     elapsedMs?: number
     elapsedS?: number

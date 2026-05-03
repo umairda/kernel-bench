@@ -40,6 +40,20 @@ describe('rpc_methods/shared', () => {
     expect(Object.values(progress ?? {})).not.toContain(undefined)
   })
 
+  it('parses vector element progress lines', async () => {
+    const shared = await import('../../../lambda/rpc_methods/shared')
+    const progress = shared.parseProgressLine('KERNEL_BENCH_PROGRESS op=vector-add backend=cpu status=running heartbeat=1 elements_done=1000000 total_elements=10000000')
+
+    expect(progress).toMatchObject({
+      op: 'vector-add',
+      backend: 'cpu',
+      status: 'running',
+      heartbeat: 1,
+      elementsDone: 1000000,
+      totalElements: 10000000,
+    })
+  })
+
   it('can release a runner lock without aborting in-flight workflow execution', async () => {
     const ddb = { send: vi.fn().mockResolvedValue(undefined) }
     const ssm = { send: vi.fn() }
