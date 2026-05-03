@@ -93,9 +93,13 @@ function ChartPanel({
   )
 }
 
-function buildVectorSeries(points: VectorHistoryPoint[], key: 'addMs' | 'subtractMs' | 'multiplyMs' | 'divideMs', runner: Runner) {
+function positiveNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+}
+
+export function buildVectorSeries(points: VectorHistoryPoint[], key: 'addMs' | 'subtractMs' | 'multiplyMs' | 'divideMs', runner: Runner) {
   return points
-    .filter((point) => point.runner === runner && typeof point[key] === 'number')
+    .filter((point) => point.runner === runner && positiveNumber(point.vectorLength) && positiveNumber(point[key]))
     .map((point) => ({
       x: point.vectorLength,
       y: point[key] as number,
@@ -104,9 +108,9 @@ function buildVectorSeries(points: VectorHistoryPoint[], key: 'addMs' | 'subtrac
     }))
 }
 
-function buildMatmulSeries(points: MatmulHistoryPoint[], runner: Runner) {
+export function buildMatmulSeries(points: MatmulHistoryPoint[], runner: Runner) {
   return points
-    .filter((point) => point.runner === runner && typeof point.size === 'number' && typeof point.matmulMs === 'number')
+    .filter((point) => point.runner === runner && positiveNumber(point.size) && positiveNumber(point.matmulMs))
     .map((point) => ({
       x: point.size as number,
       y: point.matmulMs as number,
@@ -115,9 +119,9 @@ function buildMatmulSeries(points: MatmulHistoryPoint[], runner: Runner) {
     }))
 }
 
-function buildConvolutionSeries(points: ConvolutionHistoryPoint[], runner: Runner) {
+export function buildConvolutionSeries(points: ConvolutionHistoryPoint[], runner: Runner) {
   return points
-    .filter((point) => point.runner === runner && typeof point.inputArea === 'number' && typeof point.convolutionMs === 'number')
+    .filter((point) => point.runner === runner && positiveNumber(point.inputArea) && positiveNumber(point.convolutionMs))
     .map((point) => ({
       x: point.inputArea,
       y: point.convolutionMs as number,

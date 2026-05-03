@@ -41,6 +41,10 @@ function seriesKey(benchmark: Benchmark, runner: HistoryRunner) {
   return `${benchmark}#${runner}`
 }
 
+function completedAtRunId(run: Pick<HistorySourceRun, 'createdAt' | 'completedAt' | 'runId'>) {
+  return `${run.createdAt ?? run.completedAt}#${run.runId}`
+}
+
 export async function writeHistoryRecord(run: HistorySourceRun) {
   if (!HISTORY_TABLE_NAME || !run.performance || !run.completedAt) return
 
@@ -61,7 +65,7 @@ export async function writeHistoryRecord(run: HistorySourceRun) {
 
   const item: Record<string, unknown> = {
     seriesKey: seriesKey(run.benchmark, run.runner),
-    completedAtRunId: `${run.completedAt}#${run.runId}`,
+    completedAtRunId: completedAtRunId(run),
     runId: run.runId,
     benchmark: run.benchmark,
     runner: run.runner,
@@ -117,8 +121,43 @@ async function queryHistorySeries(benchmark: Benchmark, runner: HistoryRunner) {
   return (result.Items ?? []) as Array<Record<string, any>>
 }
 
+function chooseHistoryItem(a: Record<string, any>, b: Record<string, any>) {
+  const aCompletedAt = String(a.completedAt ?? '')
+  const bCompletedAt = String(b.completedAt ?? '')
+  if (aCompletedAt !== bCompletedAt) {
+    return aCompletedAt > bCompletedAt ? a : b
+  }
+
+  const aUpdatedAt = String(a.updatedAt ?? '')
+  const bUpdatedAt = String(b.updatedAt ?? '')
+  if (aUpdatedAt !== bUpdatedAt) {
+    return aUpdatedAt > bUpdatedAt ? a : b
+  }
+
+  return a
+}
+
+function dedupeHistoryItems(items: Array<Record<string, any>>) {
+  const byRunId = new Map<string, Record<string, any>>()
+  const withoutRunId: Array<Record<string, any>> = []
+
+  for (const item of items) {
+    if (!item.runId) {
+      withoutRunId.push(item)
+      continue
+    }
+
+    const key = String(item.runId)
+    const existing = byRunId.get(key)
+    byRunId.set(key, existing ? chooseHistoryItem(existing, item) : item)
+  }
+
+  return [...byRunId.values(), ...withoutRunId]
+}
+
 export async function queryHistory(benchmark: Benchmark, runner?: HistoryRunner | 'all') {
   const runners: HistoryRunner[] = runner && runner !== 'all' ? [runner] : ['cpu', 'gpu']
   const results = await Promise.all(runners.map((value) => queryHistorySeries(benchmark, value)))
-  return results.flat().sort((a, b) => String(a.completedAt ?? '').localeCompare(String(b.completedAt ?? '')))
+  return dedupeHistoryItems(results.flat())
+    .sort((a, b) => String(a.completedAt ?? '').localeCompare(String(b.completedAt ?? '')))
 }
