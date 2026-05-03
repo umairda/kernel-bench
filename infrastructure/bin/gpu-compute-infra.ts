@@ -5,8 +5,8 @@ import { KernelBenchStack } from '../lib/gpu-benchmark-stack';
 const app = new cdk.App();
 
 const sshCidr = app.node.tryGetContext('sshCidr') ?? '0.0.0.0/32';
-const cpuInstanceType = app.node.tryGetContext('cpuInstanceType') ?? 'c7i.xlarge';
-const gpuInstanceType = app.node.tryGetContext('gpuInstanceType') ?? 'g4dn.xlarge';
+const cpuInstanceType = app.node.tryGetContext('cpuInstanceType') ?? 'c7i.8xlarge';
+const gpuInstanceType = app.node.tryGetContext('gpuInstanceType') ?? 'g6e.xlarge';
 const gpuAmiId = app.node.tryGetContext('gpuAmiId') ?? process.env.KERNELBENCH_GPU_AMI_ID;
 const sourceArchiveKey =
   app.node.tryGetContext('sourceArchiveKey') ?? 'kernel-bench/source/latest.tar.gz';

@@ -27,6 +27,25 @@ describe('ConvolutionSection', () => {
       <ConvolutionSection
         cpuState="stopped"
         gpuState="stopped"
+        lastRun={{
+          runId: 'previous-conv',
+          runner: 'cpu',
+          benchmark: 'convolution',
+          status: 'COMPLETED',
+          params: {
+            inputN: 1,
+            inputC: 3,
+            inputH: 128,
+            inputW: 64,
+            filterOutC: 16,
+            filterH: 3,
+            filterW: 3,
+            strideH: 1,
+            strideW: 1,
+            padH: 1,
+            padW: 2,
+          },
+        }}
         onCpuRunStarted={onCpuRunStarted}
         onGpuRunStarted={vi.fn()}
         onCpuStartError={onCpuStartError}
@@ -34,8 +53,8 @@ describe('ConvolutionSection', () => {
       />,
     )
 
-    fireEvent.change(screen.getByLabelText('Input H'), { target: { value: '128' } })
-    fireEvent.change(screen.getByLabelText('Pad W'), { target: { value: '2' } })
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Input H' })).toHaveValue('128'))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Pad W' })).toHaveValue('2'))
     fireEvent.click(screen.getByRole('button', { name: /Run CPU/i }))
 
     await waitFor(() => {

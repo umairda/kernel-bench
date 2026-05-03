@@ -15,11 +15,13 @@ function formatInteger(value: number) {
 
 export function NumberField({
   label,
+  ariaLabel,
   value,
   min = 0,
   onChange,
 }: {
   label: React.ReactNode
+  ariaLabel?: string
   value: number
   min?: number
   onChange: (value: number) => void
@@ -38,6 +40,7 @@ export function NumberField({
       <span>{label}</span>
       <input
         type="text"
+        aria-label={ariaLabel}
         inputMode="numeric"
         value={focused ? draft : (Number.isNaN(value) ? '' : formatInteger(value))}
         onFocus={() => {

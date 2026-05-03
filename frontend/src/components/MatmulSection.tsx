@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, Play } from 'lucide-react'
 import { type RunRecord, useStartRunMutation } from '../lib/api'
+import { MemoryBudgetSummary } from './MemoryBudgetSummary'
 import { NumberField } from './NumberField'
 import { RunStatusCard } from './RunStatusCard'
 import { ShimmerButton } from './aceternity/shimmer-button'
@@ -8,25 +9,10 @@ import { ShimmerButton } from './aceternity/shimmer-button'
 type MatmulParams = { inputRows: number; inputCols: number; outputCols: number }
 const DEFAULT_MATMUL_PARAMS: MatmulParams = { inputRows: 256, inputCols: 256, outputCols: 256 }
 const BYTES_PER_FLOAT32 = 4
-const G4DN_XLARGE_MATMUL_TOTAL_BYTES_LIMIT = 8 * 1024 * 1024 * 1024
 
 function numberParam(params: Record<string, number> | undefined, key: keyof MatmulParams, fallback: number) {
   const value = params?.[key]
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
-}
-
-function formatBytes(bytes: number) {
-  const numberFormat = { minimumFractionDigits: 1, maximumFractionDigits: 1 }
-  if (bytes >= 1000 * 1000 * 1000) {
-    return `${(bytes / (1000 * 1000 * 1000)).toLocaleString(undefined, numberFormat)} GB`
-  }
-  if (bytes >= 1000 * 1000) {
-    return `${(bytes / (1000 * 1000)).toLocaleString(undefined, numberFormat)} MB`
-  }
-  if (bytes >= 1000) {
-    return `${(bytes / 1000).toLocaleString(undefined, numberFormat)} KB`
-  }
-  return `${bytes.toLocaleString(undefined, numberFormat)} B`
 }
 
 export function MatmulSection({
@@ -88,7 +74,6 @@ export function MatmulSection({
   const bytesInputB = params.inputCols * params.outputCols * BYTES_PER_FLOAT32
   const bytesOutput = params.inputRows * params.outputCols * BYTES_PER_FLOAT32
   const bytesTotal = bytesInputA + bytesInputB + bytesOutput
-  const overLimit = bytesTotal > G4DN_XLARGE_MATMUL_TOTAL_BYTES_LIMIT
 
   return (
     <div className="rounded-2xl border border-zinc-300/70 bg-white/80 px-5 py-5 dark:border-white/10 dark:bg-zinc-900/50">
@@ -101,17 +86,14 @@ export function MatmulSection({
           <NumberField label="Input Cols (= Output Rows)" min={1} value={params.inputCols} onChange={(value) => setParams((p) => ({ ...p, inputCols: value }))} />
           <NumberField label="Output Cols" min={1} value={params.outputCols} onChange={(value) => setParams((p) => ({ ...p, outputCols: value }))} />
         </div>
-        <div className="rounded-xl border border-zinc-300 bg-zinc-100 p-3 text-xs text-zinc-700 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-300">
-          <p><span className="font-semibold">Input A:</span> {formatBytes(bytesInputA)}</p>
-          <p><span className="font-semibold">Input B:</span> {formatBytes(bytesInputB)}</p>
-          <p><span className="font-semibold">Output:</span> {formatBytes(bytesOutput)}</p>
-          <p className={`mt-1 ${overLimit ? 'text-red-700 dark:text-red-300' : ''}`}>
-            <span className="font-semibold">Total:</span> {formatBytes(bytesTotal)}
-          </p>
-          <p className="mt-1 text-zinc-600 dark:text-zinc-400">
-            Constraint (g4dn.xlarge): total should be less than {formatBytes(G4DN_XLARGE_MATMUL_TOTAL_BYTES_LIMIT)} (~8.6 GB)
-          </p>
-        </div>
+        <MemoryBudgetSummary
+          items={[
+            { label: 'Input A', bytes: bytesInputA },
+            { label: 'Input B', bytes: bytesInputB },
+            { label: 'Output', bytes: bytesOutput },
+          ]}
+          totalBytes={bytesTotal}
+        />
         <div className="flex flex-wrap gap-3">
           <ShimmerButton
             title={cpuTitle}

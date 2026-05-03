@@ -80,12 +80,12 @@ Primary key:
 
 ### CPU Runner
 
-- default instance type: `c7i.xlarge`
+- default instance type: `c7i.8xlarge`
 - standard Amazon Linux 2023 image
 
 ### GPU Runner
 
-- default instance type: `g4dn.xlarge`
+- default instance type: `g6e.xlarge`
 - either:
   - default Amazon Linux 2023 image with best-effort runtime GPU setup
   - or a prepared custom AMI when `KERNELBENCH_GPU_AMI_ID` / `gpuAmiId` is supplied
@@ -188,7 +188,7 @@ npm run deploy
 Optional deploy context:
 
 ```bash
-npm run deploy -- -c cpuInstanceType=c7i.xlarge -c gpuInstanceType=g5.xlarge -c sshCidr=203.0.113.10/32
+npm run deploy -- -c cpuInstanceType=c7i.8xlarge -c gpuInstanceType=g6e.xlarge -c sshCidr=203.0.113.10/32
 ```
 
 Manual source bundle upload:

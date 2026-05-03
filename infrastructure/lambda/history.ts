@@ -23,7 +23,7 @@ type HistorySourceRun = {
 }
 
 function fallbackInstanceType(runner: HistoryRunner): string {
-  return runner === 'cpu' ? 'c7i.xlarge' : 'g4dn.xlarge'
+  return runner === 'cpu' ? 'c7i.8xlarge' : 'g6e.xlarge'
 }
 
 function operationLookup(performance?: HistorySourceRun['performance']) {

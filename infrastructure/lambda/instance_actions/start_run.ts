@@ -8,8 +8,8 @@ import { isOriginVerified, makeS3Prefix, nowIso, parseJsonBody, publicRunView, r
 const RUNS_TABLE_NAME = process.env.RUNS_TABLE_NAME!
 const CPU_INSTANCE_ID = process.env.CPU_INSTANCE_ID!
 const GPU_INSTANCE_ID = process.env.GPU_INSTANCE_ID!
-const CPU_INSTANCE_TYPE = process.env.CPU_INSTANCE_TYPE ?? 'c7i.xlarge'
-const GPU_INSTANCE_TYPE = process.env.GPU_INSTANCE_TYPE ?? 'g4dn.xlarge'
+const CPU_INSTANCE_TYPE = process.env.CPU_INSTANCE_TYPE ?? 'c7i.8xlarge'
+const GPU_INSTANCE_TYPE = process.env.GPU_INSTANCE_TYPE ?? 'g6e.xlarge'
 const RUN_WORKFLOW_STATE_MACHINE_ARN = process.env.RUN_WORKFLOW_STATE_MACHINE_ARN!
 const LOCK_TTL_SECONDS = Number(process.env.RUNNER_LOCK_TTL_SECONDS ?? '7200')
 

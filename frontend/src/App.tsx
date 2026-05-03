@@ -375,7 +375,7 @@ function App() {
             </button>
           </div>
           <p className="text-sm text-zinc-600 dark:text-zinc-300">
-            Binary test runner for comparing CPU (c7i.xlarge) and GPU (g4dn.xlarge) benchmarks.
+            Binary test runner for comparing CPU (c7i.8xlarge) and GPU (g6e.xlarge) benchmarks.
           </p>
         </header>
 
