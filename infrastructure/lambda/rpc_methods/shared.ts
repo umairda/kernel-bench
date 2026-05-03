@@ -263,6 +263,44 @@ export async function attachPerformance(item: Record<string, any>): Promise<Reco
   return item
 }
 
+export async function completeRunIfPerformanceAvailable(
+  item: Record<string, any>,
+  options: { ssmStatus?: string; responseCode?: number; progress?: Record<string, any> } = {},
+): Promise<Record<string, any> | undefined> {
+  const withPerformance = await attachPerformance(item)
+  if (!withPerformance.performance) return undefined
+
+  const now = nowIso()
+  const values: Record<string, any> = {
+    ':status': 'COMPLETED',
+    ':reason': 'COMPLETED_WITH_UPLOADED_PERFORMANCE',
+    ':ssmStatus': options.ssmStatus ?? withPerformance.ssmStatus ?? 'Unknown',
+    ':updatedAt': now,
+    ':responseCode': options.responseCode ?? withPerformance.responseCode ?? -1,
+    ':completedAt': now,
+  }
+  let updateExpression = 'SET #status = :status, reason = :reason, ssmStatus = :ssmStatus, updatedAt = :updatedAt, responseCode = :responseCode, completedAt = :completedAt'
+  if (options.progress) {
+    updateExpression += ', progress = :progress'
+    values[':progress'] = options.progress
+  }
+  updateExpression += ' REMOVE #error'
+
+  await ddb.send(new UpdateCommand({
+    TableName: RUNS_TABLE_NAME,
+    Key: { runId: withPerformance.runId },
+    UpdateExpression: updateExpression,
+    ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
+    ExpressionAttributeValues: values,
+  }))
+  await stopInstance(withPerformance.instanceId)
+  await releaseRunnerLock(withPerformance.runner, withPerformance.runId, { cancelInFlight: false })
+  await emitTerminalMetrics(withPerformance, 'COMPLETED')
+
+  const latest = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId: withPerformance.runId } }))
+  return attachPerformance((latest.Item as Record<string, any>) ?? withPerformance)
+}
+
 function parseNumber(value: string | undefined): number | undefined {
   if (value === undefined) return undefined
   const n = Number(value)
@@ -417,6 +455,15 @@ export async function reconcileRunningItem(item: Record<string, any>): Promise<R
         await emitTerminalMetrics(item, mappedRetry)
         const latest = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId: item.runId } }))
         return (latest.Item as Record<string, any>) ?? item
+      }
+
+      const completedFromPerformance = await completeRunIfPerformanceAvailable(item, {
+        ssmStatus: invRetry.Status ?? inv.Status ?? 'Unknown',
+        responseCode: invRetry.ResponseCode ?? inv.ResponseCode ?? -1,
+        progress: latestProgress,
+      })
+      if (completedFromPerformance) {
+        return completedFromPerformance
       }
 
       if (state === 'stopping' || state === 'shutting-down') {

@@ -22,6 +22,7 @@ import {
   reasonFromSsm,
   extractLatestProgress,
   extractLatestProgressFromLogs,
+  completeRunIfPerformanceAvailable,
 } from './shared'
 
 export async function rpcRunStatus(rawParams: unknown) {
@@ -33,6 +34,16 @@ export async function rpcRunStatus(rawParams: unknown) {
   }
 
   if (TERMINAL_STATUSES.has(item.status)) {
+    if (item.status !== 'COMPLETED' && item.reason === 'INSTANCE_STOPPING_WHILE_SSM_RUNNING') {
+      const completedFromPerformance = await completeRunIfPerformanceAvailable(item, {
+        ssmStatus: item.ssmStatus,
+        responseCode: item.responseCode,
+        progress: item.progress,
+      })
+      if (completedFromPerformance) {
+        return publicRunView(completedFromPerformance)
+      }
+    }
     await releaseRunnerLock(item.runner, runId, { cancelInFlight: false })
     item = await attachPerformance(item)
     return publicRunView(item)
@@ -110,6 +121,15 @@ export async function rpcRunStatus(rawParams: unknown) {
           const refreshed = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId } }))
           item = (refreshed.Item as Record<string, any>) ?? item
           return publicRunView(item)
+        }
+
+        const completedFromPerformance = await completeRunIfPerformanceAvailable(item, {
+          ssmStatus: invRetry.Status ?? inv.Status ?? 'Unknown',
+          responseCode: invRetry.ResponseCode ?? inv.ResponseCode ?? -1,
+          progress: latestProgress,
+        })
+        if (completedFromPerformance) {
+          return publicRunView(completedFromPerformance)
         }
 
         // While instance is still stopping/shutting down, keep RUNNING and let next poll settle terminal state.
