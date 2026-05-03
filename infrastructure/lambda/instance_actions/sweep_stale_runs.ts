@@ -1,10 +1,10 @@
 import type { ScheduledEvent } from 'aws-lambda'
 import { ScanCommand, UpdateCommand, DeleteCommand, GetCommand } from '@aws-sdk/lib-dynamodb'
-import { DescribeInstancesCommand, StopInstancesCommand } from '@aws-sdk/client-ec2'
+import { DescribeInstancesCommand } from '@aws-sdk/client-ec2'
 import { ListCommandInvocationsCommand } from '@aws-sdk/client-ssm'
 import { ddb, ec2, ssm } from '../aws'
 import { nowIso } from '../common'
-import { dispatchNextQueuedRun, hasQueuedRuns, type Runner } from '../run_queue'
+import { dispatchNextOrStopRunner, dispatchNextQueuedRun, hasQueuedRuns, type Runner } from '../run_queue'
 
 const RUNS_TABLE_NAME = process.env.RUNS_TABLE_NAME!
 const STALE_MINUTES = Number(process.env.RUN_STALE_MINUTES ?? '45')
@@ -22,22 +22,6 @@ async function releaseRunnerLock(runner: string | undefined, runId: string) {
       ExpressionAttributeValues: { ':owner': runId },
     }))
   } catch {}
-}
-
-async function stopInstance(instanceId?: string) {
-  if (!instanceId) return
-  try { await ec2.send(new StopInstancesCommand({ InstanceIds: [instanceId] })) } catch {}
-}
-
-async function dispatchNextOrStopRunner(runner: string | undefined, instanceId?: string) {
-  if (runner !== 'cpu' && runner !== 'gpu') {
-    await stopInstance(instanceId)
-    return
-  }
-  const dispatch = await dispatchNextQueuedRun(runner)
-  if (!dispatch.started && dispatch.reason === 'empty' && !await hasQueuedRuns(runner)) {
-    await stopInstance(instanceId)
-  }
 }
 
 function parseIso(v?: string): number | undefined {
@@ -91,8 +75,8 @@ async function reapIdleRunner(runner: Runner, instanceId?: string): Promise<numb
   const runningMinutes = launch ? (Date.now() - new Date(launch).getTime()) / 60000 : 0
   if (runningMinutes < IDLE_INSTANCE_MINUTES) return 0
 
-  await stopInstance(instanceId)
-  return 1
+  const stop = await dispatchNextOrStopRunner(runner, instanceId)
+  return stop.reason === 'stopped' ? 1 : 0
 }
 
 async function reapIdleInstances(): Promise<number> {

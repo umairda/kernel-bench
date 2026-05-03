@@ -56,6 +56,55 @@ describe('run_queue', () => {
     expect(out).toMatchObject({ started: false, runId: 'queued-run', reason: 'busy' })
     expect(sfn.send).not.toHaveBeenCalled()
   })
+
+  it('does not stop an instance when a new run claimed the lock after the empty queue check', async () => {
+    const ddb = { send: vi.fn() }
+    const sfn = { send: vi.fn() }
+    const ec2 = { send: vi.fn() }
+    const putMetric = vi.fn()
+    ddb.send.mockImplementation(async (command: any) => {
+      if (command.constructor.name === 'ScanCommand') {
+        return { Items: [] }
+      }
+      if (command.constructor.name === 'UpdateCommand') {
+        throw Object.assign(new Error('conditional failed'), { name: 'ConditionalCheckFailedException' })
+      }
+      if (command.constructor.name === 'GetCommand') {
+        return { Item: { ownerRunId: 'new-run' } }
+      }
+      return {}
+    })
+    vi.doMock('../../lambda/aws', () => ({ ddb, sfn, ec2, putMetric }))
+
+    const { dispatchNextOrStopRunner } = await import('../../lambda/run_queue')
+    const out = await dispatchNextOrStopRunner('cpu', 'i-cpu')
+
+    expect(out).toMatchObject({ started: false, runId: 'new-run', reason: 'idle-stop-busy' })
+    expect(ec2.send).not.toHaveBeenCalled()
+    expect(sfn.send).not.toHaveBeenCalled()
+  })
+
+  it('uses a temporary idle-stop lock before stopping an idle runner', async () => {
+    const ddb = { send: vi.fn() }
+    const sfn = { send: vi.fn() }
+    const ec2 = { send: vi.fn().mockResolvedValue({}) }
+    const putMetric = vi.fn()
+    ddb.send.mockImplementation(async (command: any) => {
+      if (command.constructor.name === 'ScanCommand') {
+        return { Items: [] }
+      }
+      return {}
+    })
+    vi.doMock('../../lambda/aws', () => ({ ddb, sfn, ec2, putMetric }))
+
+    const { dispatchNextOrStopRunner } = await import('../../lambda/run_queue')
+    const out = await dispatchNextOrStopRunner('gpu', 'i-gpu')
+
+    expect(out).toMatchObject({ started: false, reason: 'stopped' })
+    expect(ec2.send).toHaveBeenCalledTimes(1)
+    const lockUpdate = ddb.send.mock.calls.find(([command]: any[]) => command.constructor.name === 'UpdateCommand')?.[0]
+    expect(lockUpdate.input.ExpressionAttributeValues[':owner']).toMatch(/^IDLE_STOP#gpu#/)
+  })
 })
 
 function queuedRun(runId: string, runner: 'cpu' | 'gpu', queuedAt: string) {

@@ -218,6 +218,10 @@ export function listInProgressRuns() {
   return rpc<{ items: RunRecord[] }>('listInProgressRuns')
 }
 
+export function deleteQueuedRun(runId: string) {
+  return rpc<{ ok: boolean; runId: string; runner: Runner }>('deleteQueuedRun', { runId })
+}
+
 export function getInstanceStates() {
   return rpc<InstanceStates>('getInstanceStates')
 }
@@ -259,6 +263,19 @@ export function useStartRunMutation() {
     mutationFn: startRunWithRecovery,
     onSuccess: (run) => {
       queryClient.setQueryData(queryKeys.runStatus(run.runId), run)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.inProgressRuns() })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.instanceStates() })
+    },
+  })
+}
+
+export function useDeleteQueuedRunMutation() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: deleteQueuedRun,
+    onSuccess: (_deleted, runId) => {
+      queryClient.removeQueries({ queryKey: queryKeys.runStatus(runId) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.inProgressRuns() })
       void queryClient.invalidateQueries({ queryKey: queryKeys.instanceStates() })
     },

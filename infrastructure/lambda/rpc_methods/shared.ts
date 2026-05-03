@@ -1,5 +1,5 @@
 import { GetObjectCommand } from '@aws-sdk/client-s3'
-import { DescribeInstancesCommand, StopInstancesCommand } from '@aws-sdk/client-ec2'
+import { DescribeInstancesCommand } from '@aws-sdk/client-ec2'
 import { CancelCommandCommand, GetCommandInvocationCommand } from '@aws-sdk/client-ssm'
 import { DescribeExecutionCommand, StopExecutionCommand } from '@aws-sdk/client-sfn'
 import { FilterLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs'
@@ -8,7 +8,7 @@ import { cloudwatchLogs, ddb, ec2, putMetric, s3, sfn, ssm } from '../aws'
 import { benchmarkChoices, isBenchmark, normalizeBenchmarkParams, type Benchmark } from '../benchmark_registry'
 import { JsonRpcError, TERMINAL_STATUSES, mapSsmStatus, normalizePerformance, nowIso, publicRunView, reasonFromSsm } from '../common'
 import { queryHistory, writeHistoryRecord } from '../history'
-import { dispatchNextQueuedRun, hasQueuedRuns } from '../run_queue'
+import { dispatchNextOrStopRunner } from '../run_queue'
 
 export type Runner = 'cpu' | 'gpu'
 export type HistoryRunnerParam = Runner | 'all' | undefined
@@ -198,28 +198,6 @@ export async function reconcileWorkflowTerminal(item: Record<string, any>): Prom
   await emitTerminalMetrics(item, mapped)
   const latest = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId: item.runId } }))
   return (latest.Item as Record<string, any>) ?? item
-}
-
-export async function stopInstance(instanceId?: string) {
-  if (!instanceId) return
-  try {
-    await ec2.send(new StopInstancesCommand({ InstanceIds: [instanceId] }))
-  } catch {}
-}
-
-export async function dispatchNextOrStopRunner(runner: string | undefined, instanceId?: string) {
-  if (runner !== 'cpu' && runner !== 'gpu') {
-    await stopInstance(instanceId)
-    return { started: false, reason: 'unknown-runner' }
-  }
-
-  const dispatch = await dispatchNextQueuedRun(runner)
-  if (dispatch.started || dispatch.reason !== 'empty' || await hasQueuedRuns(runner)) {
-    return dispatch
-  }
-
-  await stopInstance(instanceId)
-  return dispatch
 }
 
 export async function acquireRunnerLock(runner: Runner, runId: string): Promise<{ ok: boolean; activeRunId?: string }> {
@@ -536,4 +514,4 @@ export async function getState(instanceId: string) {
   return resp.Reservations?.[0]?.Instances?.[0]?.State?.Name ?? 'unknown'
 }
 
-export { ddb, ec2, ssm, mapSsmStatus, nowIso, publicRunView, queryHistory, JsonRpcError, putMetric, TERMINAL_STATUSES, reasonFromSsm }
+export { ddb, ec2, ssm, mapSsmStatus, nowIso, publicRunView, queryHistory, JsonRpcError, putMetric, TERMINAL_STATUSES, reasonFromSsm, dispatchNextOrStopRunner }

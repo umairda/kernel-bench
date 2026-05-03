@@ -1,6 +1,7 @@
 import { DeleteCommand, GetCommand, ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { StartExecutionCommand } from '@aws-sdk/client-sfn'
-import { ddb, putMetric, sfn } from './aws'
+import { StopInstancesCommand } from '@aws-sdk/client-ec2'
+import { ddb, ec2, putMetric, sfn } from './aws'
 import { nowIso } from './common'
 import type { Benchmark } from './benchmark_registry'
 
@@ -27,7 +28,7 @@ export type QueuedRunItem = {
 export type QueueDispatchResult = {
   started: boolean
   runId?: string
-  reason: 'empty' | 'busy' | 'started' | 'lost-race' | 'failed' | 'missing-state-machine'
+  reason: 'empty' | 'busy' | 'started' | 'lost-race' | 'failed' | 'missing-state-machine' | 'idle-stop-busy' | 'stopped' | 'unknown-runner'
   error?: string
 }
 
@@ -73,6 +74,17 @@ async function releaseRunnerLockOnly(runner: Runner, runId: string) {
       ConditionExpression: 'ownerRunId = :owner',
       ExpressionAttributeValues: { ':owner': runId },
     }))
+  } catch {}
+}
+
+function idleStopOwner(runner: Runner) {
+  return `IDLE_STOP#${runner}#${Date.now()}#${Math.random().toString(36).slice(2)}`
+}
+
+async function stopInstance(instanceId?: string) {
+  if (!instanceId) return
+  try {
+    await ec2.send(new StopInstancesCommand({ InstanceIds: [instanceId] }))
   } catch {}
 }
 
@@ -193,4 +205,41 @@ export async function dispatchNextQueuedRun(runner: Runner): Promise<QueueDispat
     await putMetric('RunFailed', 1, runner, next.benchmark)
     return { started: false, runId: next.runId, reason: 'failed', error: String((error as any)?.message ?? error) }
   }
+}
+
+export async function dispatchNextOrStopRunner(runner: string | undefined, instanceId?: string): Promise<QueueDispatchResult> {
+  if (runner !== 'cpu' && runner !== 'gpu') {
+    await stopInstance(instanceId)
+    return { started: false, reason: 'unknown-runner' }
+  }
+
+  const dispatch = await dispatchNextQueuedRun(runner)
+  if (dispatch.started || dispatch.reason !== 'empty' || await hasQueuedRuns(runner)) {
+    return dispatch
+  }
+
+  const idleOwner = idleStopOwner(runner)
+  const lock = await acquireRunnerLock(runner, idleOwner)
+  if (!lock.ok) {
+    return { started: false, runId: lock.activeRunId, reason: 'idle-stop-busy' }
+  }
+
+  let shouldDispatchAfterRelease = false
+  let result: QueueDispatchResult = { started: false, reason: 'stopped' }
+  try {
+    if (await hasQueuedRuns(runner)) {
+      shouldDispatchAfterRelease = true
+      result = { started: false, reason: 'lost-race' }
+    } else {
+      await stopInstance(instanceId)
+      shouldDispatchAfterRelease = await hasQueuedRuns(runner)
+    }
+  } finally {
+    await releaseRunnerLockOnly(runner, idleOwner)
+  }
+
+  if (shouldDispatchAfterRelease) {
+    return dispatchNextQueuedRun(runner)
+  }
+  return result
 }

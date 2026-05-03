@@ -1,6 +1,6 @@
 import type { Context } from 'aws-lambda'
 import { DeleteCommand, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
-import { DescribeInstanceStatusCommand, DescribeInstancesCommand, StartInstancesCommand, StopInstancesCommand, waitUntilInstanceRunning, waitUntilInstanceStopped } from '@aws-sdk/client-ec2'
+import { DescribeInstanceStatusCommand, DescribeInstancesCommand, StartInstancesCommand, waitUntilInstanceRunning, waitUntilInstanceStopped } from '@aws-sdk/client-ec2'
 import { FilterLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs'
 import { DescribeInstanceInformationCommand, GetCommandInvocationCommand, SendCommandCommand } from '@aws-sdk/client-ssm'
 import { GetObjectCommand } from '@aws-sdk/client-s3'
@@ -8,7 +8,7 @@ import { cloudwatchLogs, ddb, ec2, putMetric, s3, ssm } from '../aws'
 import { estimateBenchmarkTimeoutSeconds, type Benchmark } from '../benchmark_registry'
 import { mapSsmStatus, normalizePerformance, nowIso, reasonFromSsm, TERMINAL_STATUSES } from '../common'
 import { writeHistoryRecord } from '../history'
-import { dispatchNextQueuedRun, hasQueuedRuns } from '../run_queue'
+import { dispatchNextOrStopRunner } from '../run_queue'
 
 const RUNS_TABLE_NAME = process.env.RUNS_TABLE_NAME!
 const ARTIFACT_BUCKET_NAME = process.env.ARTIFACT_BUCKET_NAME!
@@ -127,16 +127,6 @@ async function releaseRunnerLock(runner: string | undefined, runId: string) {
       ExpressionAttributeValues: { ':owner': runId },
     }))
   } catch {}
-}
-
-async function dispatchNextOrStopRunner(runner: 'cpu' | 'gpu', instanceId: string) {
-  const dispatch = await dispatchNextQueuedRun(runner)
-  if (dispatch.started || dispatch.reason !== 'empty' || await hasQueuedRuns(runner)) {
-    return dispatch
-  }
-
-  try { await ec2.send(new StopInstancesCommand({ InstanceIds: [instanceId] })) } catch {}
-  return dispatch
 }
 
 async function currentState(instanceId: string): Promise<string | undefined> {
