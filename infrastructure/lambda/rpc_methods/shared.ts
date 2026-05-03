@@ -386,6 +386,43 @@ export async function reconcileRunningItem(item: Record<string, any>): Promise<R
         return item
       }
 
+      // SSM status can lag briefly while the runner script is finishing and stopping the instance.
+      // Re-check once before converting to FAILED.
+      const invRetry = await ssm.send(new GetCommandInvocationCommand({ CommandId: item.commandId, InstanceId: item.instanceId }))
+      const mappedRetry = mapSsmStatus(invRetry.Status ?? 'Unknown')
+      if (mappedRetry === 'COMPLETED' || mappedRetry === 'FAILED' || mappedRetry === 'CANCELLED') {
+        const retryProgress = extractLatestProgress(invRetry.StandardOutputContent)
+        const values: Record<string, any> = {
+          ':status': mappedRetry,
+          ':reason': reasonFromSsm(mappedRetry, invRetry.Status ?? 'Unknown', invRetry.ResponseCode ?? -1),
+          ':ssmStatus': invRetry.Status ?? 'Unknown',
+          ':updatedAt': nowIso(),
+          ':responseCode': invRetry.ResponseCode ?? -1,
+          ':completedAt': nowIso(),
+        }
+        let updateExpression = 'SET #status = :status, reason = :reason, ssmStatus = :ssmStatus, updatedAt = :updatedAt, responseCode = :responseCode, completedAt = :completedAt'
+        if (retryProgress) {
+          updateExpression += ', progress = :progress'
+          values[':progress'] = retryProgress
+        }
+        await ddb.send(new UpdateCommand({
+          TableName: RUNS_TABLE_NAME,
+          Key: { runId: item.runId },
+          UpdateExpression: updateExpression,
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: values,
+        }))
+        await stopInstance(item.instanceId)
+        await releaseRunnerLock(item.runner, item.runId)
+        await emitTerminalMetrics(item, mappedRetry)
+        const latest = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId: item.runId } }))
+        return (latest.Item as Record<string, any>) ?? item
+      }
+
+      if (state === 'stopping' || state === 'shutting-down') {
+        return item
+      }
+
       await ddb.send(new UpdateCommand({
         TableName: RUNS_TABLE_NAME,
         Key: { runId: item.runId },

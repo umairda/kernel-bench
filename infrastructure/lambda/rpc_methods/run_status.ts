@@ -78,6 +78,45 @@ export async function rpcRunStatus(rawParams: unknown) {
     if (mapped === 'RUNNING') {
       const state = await getState(instanceId)
       if (['stopped', 'stopping', 'shutting-down', 'terminated'].includes(state)) {
+        // SSM status can lag briefly while the runner script is finishing and stopping the instance.
+        // Re-check once before declaring a hard failure.
+        const invRetry = await ssm.send(new GetCommandInvocationCommand({ CommandId: commandId, InstanceId: instanceId }))
+        const mappedRetry = mapSsmStatus(invRetry.Status ?? 'Unknown')
+        if (mappedRetry === 'COMPLETED' || mappedRetry === 'FAILED' || mappedRetry === 'CANCELLED') {
+          const retryValues: Record<string, any> = {
+            ':status': mappedRetry,
+            ':reason': reasonFromSsm(mappedRetry, invRetry.Status ?? 'Unknown', invRetry.ResponseCode ?? -1),
+            ':ssmStatus': invRetry.Status ?? 'Unknown',
+            ':updatedAt': nowIso(),
+            ':responseCode': invRetry.ResponseCode ?? -1,
+            ':completedAt': nowIso(),
+          }
+          let retryUpdateExpression = 'SET #status = :status, reason = :reason, ssmStatus = :ssmStatus, updatedAt = :updatedAt, responseCode = :responseCode, completedAt = :completedAt'
+          const retryProgress = extractLatestProgress(invRetry.StandardOutputContent)
+          if (retryProgress) {
+            retryUpdateExpression += ', progress = :progress'
+            retryValues[':progress'] = retryProgress
+          }
+          await ddb.send(new UpdateCommand({
+            TableName: RUNS_TABLE_NAME,
+            Key: { runId },
+            UpdateExpression: retryUpdateExpression,
+            ExpressionAttributeNames: { '#status': 'status' },
+            ExpressionAttributeValues: retryValues,
+          }))
+          await stopInstance(instanceId)
+          await releaseRunnerLock(item.runner, runId)
+          await emitTerminalMetrics(item, mappedRetry)
+          const refreshed = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId } }))
+          item = (refreshed.Item as Record<string, any>) ?? item
+          return publicRunView(item)
+        }
+
+        // While instance is still stopping/shutting down, keep RUNNING and let next poll settle terminal state.
+        if (state === 'stopping' || state === 'shutting-down') {
+          return publicRunView(item)
+        }
+
         await ddb.send(new UpdateCommand({
           TableName: RUNS_TABLE_NAME,
           Key: { runId },
