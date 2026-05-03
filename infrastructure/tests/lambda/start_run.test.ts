@@ -12,14 +12,15 @@ describe('start_run', () => {
     expect(res.statusCode).toBe(400)
   })
 
-  it('happy path starts workflow', async () => {
+  it('happy path queues and kicks dispatcher', async () => {
     const aws = makeAwsMocks()
-    aws.ddb.send.mockResolvedValueOnce({}).mockResolvedValueOnce({})
-    aws.sfn.send.mockResolvedValue({})
+    const dispatchNextQueuedRun = vi.fn().mockResolvedValue({ started: true, reason: 'started' })
+    aws.ddb.send.mockResolvedValueOnce({})
+    vi.doMock('../../lambda/run_queue', () => ({ dispatchNextQueuedRun }))
     vi.doMock('../../lambda/aws', () => aws)
     const { handler } = await import('../../lambda/instance_actions/start_run')
     const res = await handler(baseEvent({ body: JSON.stringify({ runner: 'cpu', benchmark: 'vector', params: { vectorLength: 10 } }) }))
     expect(res.statusCode).toBe(200)
-    expect(aws.sfn.send).toHaveBeenCalledTimes(1)
+    expect(dispatchNextQueuedRun).toHaveBeenCalledWith('cpu')
   })
 })

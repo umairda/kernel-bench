@@ -30,11 +30,13 @@ export class ApiRequestError extends Error {
 
 export type RunRecord = {
   runId: string
-  status: 'STARTING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+  status: 'QUEUED' | 'STARTING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
   benchmark: Benchmark
   runner: Runner
   params: Record<string, number>
   createdAt?: string
+  queuedAt?: string
+  dispatchStartedAt?: string
   updatedAt?: string
   completedAt?: string
   reason?: string
@@ -84,6 +86,11 @@ export type RunRecord = {
       durationMs: number
     }>
   }
+}
+
+export type InstanceStates = {
+  cpu: string
+  gpu: string
 }
 
 export type RunHistoryRow = RunRecord
@@ -212,7 +219,7 @@ export function listInProgressRuns() {
 }
 
 export function getInstanceStates() {
-  return rpc<{ cpu: string; gpu: string }>('getInstanceStates')
+  return rpc<InstanceStates>('getInstanceStates')
 }
 
 export function getVectorHistory(runner: Runner | 'all' = 'all') {
@@ -265,7 +272,7 @@ export function useGetRunStatusQuery(runId: string | null) {
     enabled: Boolean(runId),
     refetchInterval: (q) => {
       const status = q.state.data?.status
-      if (!status || status === 'STARTING' || status === 'RUNNING') {
+      if (!status || status === 'QUEUED' || status === 'STARTING' || status === 'RUNNING') {
         return 2000
       }
       return false

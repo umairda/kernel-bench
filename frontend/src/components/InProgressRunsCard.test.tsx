@@ -8,7 +8,7 @@ describe('InProgressRunsCard', () => {
     render(<InProgressRunsCard items={[{ runId: 'run-1', status: 'RUNNING', benchmark: 'vector', runner: 'cpu', params: { vectorLength: 128 } }]} />)
 
     expect(screen.getByText('Active Runs')).toBeInTheDocument()
-    expect(screen.getByText('1 active run')).toBeInTheDocument()
+    expect(screen.getByText('1 queued/active run')).toBeInTheDocument()
     expect(screen.queryByText(/"runId": "run-1"/)).not.toBeInTheDocument()
   })
 

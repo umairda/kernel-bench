@@ -1,14 +1,16 @@
 import type { ScheduledEvent } from 'aws-lambda'
-import { ScanCommand, UpdateCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb'
+import { ScanCommand, UpdateCommand, DeleteCommand, GetCommand } from '@aws-sdk/lib-dynamodb'
 import { DescribeInstancesCommand, StopInstancesCommand } from '@aws-sdk/client-ec2'
 import { ListCommandInvocationsCommand } from '@aws-sdk/client-ssm'
 import { ddb, ec2, ssm } from '../aws'
 import { nowIso } from '../common'
+import { dispatchNextQueuedRun, hasQueuedRuns, type Runner } from '../run_queue'
 
 const RUNS_TABLE_NAME = process.env.RUNS_TABLE_NAME!
 const STALE_MINUTES = Number(process.env.RUN_STALE_MINUTES ?? '45')
 const IDLE_INSTANCE_MINUTES = Number(process.env.IDLE_INSTANCE_MINUTES ?? '10')
-const RUNNER_INSTANCE_IDS = [process.env.CPU_INSTANCE_ID, process.env.GPU_INSTANCE_ID].filter(Boolean) as string[]
+const CPU_INSTANCE_ID = process.env.CPU_INSTANCE_ID
+const GPU_INSTANCE_ID = process.env.GPU_INSTANCE_ID
 
 async function releaseRunnerLock(runner: string | undefined, runId: string) {
   if (!runner) return
@@ -25,6 +27,17 @@ async function releaseRunnerLock(runner: string | undefined, runId: string) {
 async function stopInstance(instanceId?: string) {
   if (!instanceId) return
   try { await ec2.send(new StopInstancesCommand({ InstanceIds: [instanceId] })) } catch {}
+}
+
+async function dispatchNextOrStopRunner(runner: string | undefined, instanceId?: string) {
+  if (runner !== 'cpu' && runner !== 'gpu') {
+    await stopInstance(instanceId)
+    return
+  }
+  const dispatch = await dispatchNextQueuedRun(runner)
+  if (!dispatch.started && dispatch.reason === 'empty' && !await hasQueuedRuns(runner)) {
+    await stopInstance(instanceId)
+  }
 }
 
 function parseIso(v?: string): number | undefined {
@@ -51,26 +64,41 @@ async function hasActiveSsmCommand(instanceId: string): Promise<boolean> {
   return false
 }
 
-async function reapIdleInstances(): Promise<number> {
-  let stopped = 0
-  for (const instanceId of RUNNER_INSTANCE_IDS) {
-    const desc = await ec2.send(new DescribeInstancesCommand({ InstanceIds: [instanceId] }))
-    const instance = desc.Reservations?.[0]?.Instances?.[0]
-    const state = instance?.State?.Name
-    if (state !== 'running') continue
-
-    const launch = instance?.LaunchTime
-    if (!launch) continue
-    const runningMinutes = (Date.now() - new Date(launch).getTime()) / 60000
-    if (runningMinutes < IDLE_INSTANCE_MINUTES) continue
-
-    const active = await hasActiveSsmCommand(instanceId)
-    if (active) continue
-
-    await stopInstance(instanceId)
-    stopped++
+async function hasActiveRunnerLock(runner: string): Promise<boolean> {
+  try {
+    const found = await ddb.send(new GetCommand({
+      TableName: RUNS_TABLE_NAME,
+      Key: { runId: `RUNNER_LOCK#${runner}` },
+    }))
+    return Boolean(found.Item?.ownerRunId)
+  } catch {
+    return false
   }
-  return stopped
+}
+
+async function reapIdleRunner(runner: Runner, instanceId?: string): Promise<number> {
+  if (!instanceId) return 0
+  if (await hasQueuedRuns(runner) || await hasActiveRunnerLock(runner)) return 0
+
+  const desc = await ec2.send(new DescribeInstancesCommand({ InstanceIds: [instanceId] }))
+  const instance = desc.Reservations?.[0]?.Instances?.[0]
+  const state = instance?.State?.Name
+  if (state !== 'running') return 0
+
+  if (await hasActiveSsmCommand(instanceId)) return 0
+
+  const launch = instance?.LaunchTime
+  const runningMinutes = launch ? (Date.now() - new Date(launch).getTime()) / 60000 : 0
+  if (runningMinutes < IDLE_INSTANCE_MINUTES) return 0
+
+  await stopInstance(instanceId)
+  return 1
+}
+
+async function reapIdleInstances(): Promise<number> {
+  const cpuStopped = await reapIdleRunner('cpu', CPU_INSTANCE_ID)
+  const gpuStopped = await reapIdleRunner('gpu', GPU_INSTANCE_ID)
+  return cpuStopped + gpuStopped
 }
 
 export async function handler(_event: ScheduledEvent) {
@@ -99,11 +127,22 @@ export async function handler(_event: ScheduledEvent) {
         ':error': `Run timed out by sweeper after ${STALE_MINUTES} minutes without terminal status`,
       },
     }))
-    await stopInstance(item.instanceId as string | undefined)
     await releaseRunnerLock(item.runner as string | undefined, item.runId as string)
+    await dispatchNextOrStopRunner(item.runner as string | undefined, item.instanceId as string | undefined)
     count++
   }
 
+  const queueDispatches = [
+    await dispatchNextQueuedRun('cpu'),
+    await dispatchNextQueuedRun('gpu'),
+  ]
   const idleInstancesStopped = await reapIdleInstances()
-  return { ok: true, staleRunsFailed: count, staleMinutes: STALE_MINUTES, idleInstancesStopped, idleInstanceMinutes: IDLE_INSTANCE_MINUTES }
+  return {
+    ok: true,
+    staleRunsFailed: count,
+    staleMinutes: STALE_MINUTES,
+    queueDispatches,
+    idleInstancesStopped,
+    idleInstanceMinutes: IDLE_INSTANCE_MINUTES,
+  }
 }

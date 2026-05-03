@@ -61,8 +61,8 @@ export function VectorSection({
   const valid = Number.isFinite(params.vectorLength) && params.vectorLength > 0
   const cpuLaunching = cpuStart.isPending
   const gpuLaunching = gpuStart.isPending
-  const isCpuExecuting = cpuLaunching || cpuRun?.status === 'STARTING' || cpuRun?.status === 'RUNNING'
-  const isGpuExecuting = gpuLaunching || gpuRun?.status === 'STARTING' || gpuRun?.status === 'RUNNING'
+  const isCpuActive = cpuRun?.status === 'QUEUED' || cpuRun?.status === 'STARTING' || cpuRun?.status === 'RUNNING'
+  const isGpuActive = gpuRun?.status === 'QUEUED' || gpuRun?.status === 'STARTING' || gpuRun?.status === 'RUNNING'
   const safeVectorLength = valid ? params.vectorLength : 0
   const bytesInputA = safeVectorLength * BYTES_PER_FLOAT32
   const bytesInputB = safeVectorLength * BYTES_PER_FLOAT32
@@ -89,7 +89,7 @@ export function VectorSection({
         <div className="flex flex-wrap gap-3">
           <ShimmerButton
             title={cpuTitle}
-            disabled={!valid || isCpuExecuting || cpuState !== 'stopped'}
+            disabled={!valid || cpuLaunching}
             onClick={async () => {
               try {
                 onCpuStartError(null)
@@ -104,15 +104,17 @@ export function VectorSection({
               }
             }}
           >
-            {isCpuExecuting ? (
-              <span className="inline-flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> CPU Executing</span>
+            {cpuLaunching ? (
+              <span className="inline-flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Queueing CPU</span>
+            ) : isCpuActive ? (
+              <span className="inline-flex items-center"><Play className="mr-2 h-4 w-4" /> Queue CPU Run</span>
             ) : (
               <span className="inline-flex items-center"><Play className="mr-2 h-4 w-4" /> Run CPU</span>
             )}
           </ShimmerButton>
           <ShimmerButton
             title={gpuTitle}
-            disabled={!valid || isGpuExecuting || gpuState !== 'stopped'}
+            disabled={!valid || gpuLaunching}
             onClick={async () => {
               try {
                 onGpuStartError(null)
@@ -127,8 +129,10 @@ export function VectorSection({
               }
             }}
           >
-            {isGpuExecuting ? (
-              <span className="inline-flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> GPU Executing</span>
+            {gpuLaunching ? (
+              <span className="inline-flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Queueing GPU</span>
+            ) : isGpuActive ? (
+              <span className="inline-flex items-center"><Play className="mr-2 h-4 w-4" /> Queue GPU Run</span>
             ) : (
               <span className="inline-flex items-center"><Play className="mr-2 h-4 w-4" /> Run GPU</span>
             )}

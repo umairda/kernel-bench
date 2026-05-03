@@ -440,7 +440,11 @@ export class KernelBenchStack extends cdk.Stack {
     });
 
     rpcFn.addEnvironment('RUN_WORKFLOW_STATE_MACHINE_ARN', runWorkflowStateMachine.stateMachineArn);
+    runWorkflowStepFn.addEnvironment('RUN_WORKFLOW_STATE_MACHINE_ARN', runWorkflowStateMachine.stateMachineArn);
+    sweepStaleRunsFn.addEnvironment('RUN_WORKFLOW_STATE_MACHINE_ARN', runWorkflowStateMachine.stateMachineArn);
     runWorkflowStateMachine.grantStartExecution(rpcFn);
+    runWorkflowStateMachine.grantStartExecution(runWorkflowStepFn);
+    runWorkflowStateMachine.grantStartExecution(sweepStaleRunsFn);
     runWorkflowStateMachine.grantRead(rpcFn);
     rpcFn.addToRolePolicy(
       new iam.PolicyStatement({

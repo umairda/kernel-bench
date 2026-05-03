@@ -18,4 +18,3 @@ describe('rpc_methods/instance_states', () => {
     expect(out).toEqual({ cpu: 'stopped', gpu: 'running' })
   })
 })
-

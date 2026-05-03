@@ -8,6 +8,7 @@ import { cloudwatchLogs, ddb, ec2, putMetric, s3, sfn, ssm } from '../aws'
 import { benchmarkChoices, isBenchmark, normalizeBenchmarkParams, type Benchmark } from '../benchmark_registry'
 import { JsonRpcError, TERMINAL_STATUSES, mapSsmStatus, normalizePerformance, nowIso, publicRunView, reasonFromSsm } from '../common'
 import { queryHistory, writeHistoryRecord } from '../history'
+import { dispatchNextQueuedRun, hasQueuedRuns } from '../run_queue'
 
 export type Runner = 'cpu' | 'gpu'
 export type HistoryRunnerParam = Runner | 'all' | undefined
@@ -192,8 +193,8 @@ export async function reconcileWorkflowTerminal(item: Record<string, any>): Prom
     ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
     ExpressionAttributeValues: expressionAttributeValues,
   }))
-  await stopInstance(item.instanceId)
   await releaseRunnerLock(item.runner, item.runId)
+  await dispatchNextOrStopRunner(item.runner, item.instanceId)
   await emitTerminalMetrics(item, mapped)
   const latest = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId: item.runId } }))
   return (latest.Item as Record<string, any>) ?? item
@@ -204,6 +205,21 @@ export async function stopInstance(instanceId?: string) {
   try {
     await ec2.send(new StopInstancesCommand({ InstanceIds: [instanceId] }))
   } catch {}
+}
+
+export async function dispatchNextOrStopRunner(runner: string | undefined, instanceId?: string) {
+  if (runner !== 'cpu' && runner !== 'gpu') {
+    await stopInstance(instanceId)
+    return { started: false, reason: 'unknown-runner' }
+  }
+
+  const dispatch = await dispatchNextQueuedRun(runner)
+  if (dispatch.started || dispatch.reason !== 'empty' || await hasQueuedRuns(runner)) {
+    return dispatch
+  }
+
+  await stopInstance(instanceId)
+  return dispatch
 }
 
 export async function acquireRunnerLock(runner: Runner, runId: string): Promise<{ ok: boolean; activeRunId?: string }> {
@@ -293,8 +309,8 @@ export async function completeRunIfPerformanceAvailable(
     ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
     ExpressionAttributeValues: values,
   }))
-  await stopInstance(withPerformance.instanceId)
   await releaseRunnerLock(withPerformance.runner, withPerformance.runId, { cancelInFlight: false })
+  await dispatchNextOrStopRunner(withPerformance.runner, withPerformance.instanceId)
   await emitTerminalMetrics(withPerformance, 'COMPLETED')
 
   const latest = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId: withPerformance.runId } }))
@@ -450,8 +466,8 @@ export async function reconcileRunningItem(item: Record<string, any>): Promise<R
           ExpressionAttributeNames: { '#status': 'status' },
           ExpressionAttributeValues: values,
         }))
-        await stopInstance(item.instanceId)
         await releaseRunnerLock(item.runner, item.runId)
+        await dispatchNextOrStopRunner(item.runner, item.instanceId)
         await emitTerminalMetrics(item, mappedRetry)
         const latest = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId: item.runId } }))
         return (latest.Item as Record<string, any>) ?? item
@@ -505,8 +521,8 @@ export async function reconcileRunningItem(item: Record<string, any>): Promise<R
         ':completedAt': nowIso(),
       },
     }))
-    await stopInstance(item.instanceId)
     await releaseRunnerLock(item.runner, item.runId, { cancelInFlight: false })
+    await dispatchNextOrStopRunner(item.runner, item.instanceId)
     await emitTerminalMetrics(item, mapped)
     const latest = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId: item.runId } }))
     return (latest.Item as Record<string, any>) ?? item

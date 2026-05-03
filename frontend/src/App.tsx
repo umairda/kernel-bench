@@ -38,7 +38,7 @@ const initialCompareState: CompareRunState = {
 }
 
 function formatInstanceStateTitle(state: string) {
-  return state !== 'stopped' ? `Instance state is ${state.toUpperCase()}` : undefined
+  return state !== 'stopped' ? `New runs will be queued while the instance is ${state.toUpperCase()}` : undefined
 }
 
 function resolveInstanceState(value: string | undefined, isPending: boolean, isError: boolean) {
@@ -58,8 +58,10 @@ function sectionExecuting(runCpu?: RunRecord, runGpu?: RunRecord, cpuLaunching?:
   return (
     cpuLaunching ||
     gpuLaunching ||
+    runCpu?.status === 'QUEUED' ||
     runCpu?.status === 'STARTING' ||
     runCpu?.status === 'RUNNING' ||
+    runGpu?.status === 'QUEUED' ||
     runGpu?.status === 'STARTING' ||
     runGpu?.status === 'RUNNING'
   )
@@ -413,7 +415,7 @@ function App() {
 
         {isAnyExecuting ? (
           <div className="fixed bottom-6 right-6 inline-flex items-center rounded-full border border-cyan-500/40 bg-white px-4 py-2 text-sm font-semibold text-cyan-800 shadow-lg dark:border-cyan-400/40 dark:bg-zinc-950 dark:text-cyan-100 dark:shadow-none">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Test Executing
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Jobs Queued / Running
           </div>
         ) : null}
 

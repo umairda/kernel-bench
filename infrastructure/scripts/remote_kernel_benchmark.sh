@@ -40,15 +40,6 @@ metadata_get() {
 
 INSTANCE_ID="$(metadata_get instance-id)"
 
-stop_instance_on_exit() {
-  local code=$?
-  if command -v aws >/dev/null 2>&1 && [[ -n "${INSTANCE_ID}" ]]; then
-    aws ec2 stop-instances --instance-ids "${INSTANCE_ID}" >/dev/null 2>&1 || true
-  fi
-  exit "${code}"
-}
-trap stop_instance_on_exit EXIT
-
 if [[ "${RUNNER}" != "cpu" && "${RUNNER}" != "gpu" ]]; then
   echo "Invalid runner: ${RUNNER}"
   exit 2

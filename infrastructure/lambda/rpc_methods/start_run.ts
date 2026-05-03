@@ -1,5 +1,4 @@
-import { StartExecutionCommand } from '@aws-sdk/client-sfn'
-import { PutCommand } from '@aws-sdk/lib-dynamodb'
+import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb'
 import { v4 as uuidv4 } from 'uuid'
 import { makeS3Prefix, nowIso, publicRunView, runTimestamp } from '../common'
 import {
@@ -12,15 +11,12 @@ import {
   asObject,
   benchmarkChoices,
   validateBenchmarkParams,
-  acquireRunnerLock,
-  getState,
   isBenchmark,
   putMetric,
   runnerInstanceType,
 } from './shared'
-import { sfn, ddb } from '../aws'
-
-const RUN_WORKFLOW_STATE_MACHINE_ARN = process.env.RUN_WORKFLOW_STATE_MACHINE_ARN!
+import { ddb } from '../aws'
+import { dispatchNextQueuedRun } from '../run_queue'
 
 type StartRunParams = {
   runner: Runner
@@ -47,31 +43,17 @@ export async function rpcStartRun(rawParams: unknown) {
   const instanceId = runner === 'cpu' ? CPU_INSTANCE_ID : GPU_INSTANCE_ID
   const instanceType = runnerInstanceType(runner)
 
-  const instanceState = await getState(instanceId)
-  if (instanceState !== 'stopped') {
-    throw new JsonRpcError(
-      -32010,
-      `${runner} instance is not ready for a new run`,
-      { runner, instanceId, instanceState, reason: `Instance must be stopped before starting a new run (current state: ${instanceState})` },
-    )
-  }
-
-  const lock = await acquireRunnerLock(runner, runId)
-  if (!lock.ok) {
-    await putMetric('RunnerBusy', 1, runner, benchmark)
-    throw new JsonRpcError(-32009, `${runner} runner already has an active run`, { runner, activeRunId: lock.activeRunId })
-  }
-
   const item = {
     runId,
     runner,
     benchmark,
     params: normalizedParams,
-    status: 'STARTING',
+    status: 'QUEUED',
     instanceId,
     instanceType,
     s3Prefix,
     createdAt,
+    queuedAt: createdAt,
     updatedAt: createdAt,
     startupProgress: {
       phase: 'QUEUED',
@@ -85,12 +67,9 @@ export async function rpcStartRun(rawParams: unknown) {
   }
 
   await ddb.send(new PutCommand({ TableName: RUNS_TABLE_NAME, Item: item }))
-  await sfn.send(new StartExecutionCommand({
-    stateMachineArn: RUN_WORKFLOW_STATE_MACHINE_ARN,
-    name: runId,
-    input: JSON.stringify(item),
-  }))
+  await putMetric('RunQueued', 1, runner, benchmark)
+  await dispatchNextQueuedRun(runner)
 
-  await putMetric('RunStarted', 1, runner, benchmark)
-  return publicRunView({ ...item, ssmStatus: 'Pending', responseCode: -1 })
+  const latest = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId } }))
+  return publicRunView((latest.Item as Record<string, any>) ?? { ...item, ssmStatus: 'Pending', responseCode: -1 })
 }

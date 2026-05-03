@@ -49,7 +49,7 @@ function formatCreatedAt(value?: string) {
 }
 
 function isActiveStatus(status: RunRecord['status']) {
-  return status === 'STARTING' || status === 'RUNNING'
+  return status === 'QUEUED' || status === 'STARTING' || status === 'RUNNING'
 }
 
 function isTerminalStatus(status: RunRecord['status']) {
@@ -186,9 +186,11 @@ export function RunStatusCard({
           <p>
             <span className="font-semibold text-zinc-700 dark:text-zinc-300">Parameters:</span> {formatBenchmarkParams(run.benchmark, run.params)}
           </p>
-          {run.status === 'STARTING' && run.startupProgress ? (
+          {(run.status === 'QUEUED' || run.status === 'STARTING') && run.startupProgress ? (
             <div className="rounded-md border border-zinc-300 bg-zinc-100 p-3 text-xs dark:border-white/10 dark:bg-zinc-950">
-              <p className="font-semibold text-zinc-700 dark:text-zinc-300">Startup Progress</p>
+              <p className="font-semibold text-zinc-700 dark:text-zinc-300">
+                {run.status === 'QUEUED' ? 'Queue Status' : 'Startup Progress'}
+              </p>
               <p className="mt-1 flex items-center justify-between gap-3">
                 <span>phase</span>
                 <span>{run.startupProgress.phase ?? 'unknown'}</span>

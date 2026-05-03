@@ -4,9 +4,9 @@ import { RUNS_TABLE_NAME, ddb, reconcileRunningItem, TERMINAL_STATUSES, publicRu
 export async function rpcInProgressRuns() {
   const resp = await ddb.send(new ScanCommand({
     TableName: RUNS_TABLE_NAME,
-    FilterExpression: '#status IN (:starting, :running)',
+    FilterExpression: '#status IN (:queued, :starting, :running)',
     ExpressionAttributeNames: { '#status': 'status' },
-    ExpressionAttributeValues: { ':starting': 'STARTING', ':running': 'RUNNING' },
+    ExpressionAttributeValues: { ':queued': 'QUEUED', ':starting': 'STARTING', ':running': 'RUNNING' },
   }))
 
   const out: Record<string, any>[] = []
@@ -16,6 +16,6 @@ export async function rpcInProgressRuns() {
       out.push(publicRunView(reconciled))
     }
   }
-  out.sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')))
+  out.sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')))
   return { items: out }
 }

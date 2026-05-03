@@ -6,7 +6,7 @@ import { GlowCard } from './aceternity/glow-card'
 export function InProgressRunsCard({ items }: { items: RunRecord[] }) {
   const [open, setOpen] = useState(false)
   const count = items.length
-  const badgeLabel = `${count} active ${count === 1 ? 'run' : 'runs'}`
+  const badgeLabel = `${count} queued/active ${count === 1 ? 'run' : 'runs'}`
 
   return (
     <GlowCard>

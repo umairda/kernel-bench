@@ -14,7 +14,6 @@ import {
   STARTING_STALE_SECONDS,
   mapSsmStatus,
   nowIso,
-  stopInstance,
   emitTerminalMetrics,
   getState,
   reconcileWorkflowTerminal,
@@ -23,7 +22,9 @@ import {
   extractLatestProgress,
   extractLatestProgressFromLogs,
   completeRunIfPerformanceAvailable,
+  dispatchNextOrStopRunner,
 } from './shared'
+import { dispatchNextQueuedRun } from '../run_queue'
 
 export async function rpcRunStatus(rawParams: unknown) {
   const runId = parseRunId(asObject(rawParams))
@@ -46,6 +47,15 @@ export async function rpcRunStatus(rawParams: unknown) {
     }
     await releaseRunnerLock(item.runner, runId, { cancelInFlight: false })
     item = await attachPerformance(item)
+    return publicRunView(item)
+  }
+
+  if (item.status === 'QUEUED') {
+    if (item.runner === 'cpu' || item.runner === 'gpu') {
+      await dispatchNextQueuedRun(item.runner)
+      const refreshed = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId } }))
+      item = (refreshed.Item as Record<string, any>) ?? item
+    }
     return publicRunView(item)
   }
 
@@ -76,6 +86,7 @@ export async function rpcRunStatus(rawParams: unknown) {
         },
       }))
       await releaseRunnerLock(item.runner, runId)
+      await dispatchNextOrStopRunner(item.runner, item.instanceId)
       const refreshed = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId } }))
       return publicRunView((refreshed.Item as Record<string, any>) ?? item)
     }
@@ -115,8 +126,8 @@ export async function rpcRunStatus(rawParams: unknown) {
             ExpressionAttributeNames: { '#status': 'status' },
             ExpressionAttributeValues: retryValues,
           }))
-          await stopInstance(instanceId)
           await releaseRunnerLock(item.runner, runId)
+          await dispatchNextOrStopRunner(item.runner, instanceId)
           await emitTerminalMetrics(item, mappedRetry)
           const refreshed = await ddb.send(new GetCommand({ TableName: RUNS_TABLE_NAME, Key: { runId } }))
           item = (refreshed.Item as Record<string, any>) ?? item
@@ -174,8 +185,8 @@ export async function rpcRunStatus(rawParams: unknown) {
     if (TERMINAL_STATUSES.has(mapped)) {
       updateExpression += ', completedAt = :completedAt'
       values[':completedAt'] = nowIso()
-      await stopInstance(instanceId)
       await releaseRunnerLock(item.runner, runId, { cancelInFlight: false })
+      await dispatchNextOrStopRunner(item.runner, instanceId)
       await emitTerminalMetrics(item, mapped)
     }
     await ddb.send(new UpdateCommand({

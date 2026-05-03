@@ -139,6 +139,8 @@ export function publicRunView(item: Record<string, any>): Record<string, any> {
     params: item.params ?? {},
     status: item.status,
     createdAt: item.createdAt,
+    queuedAt: item.queuedAt,
+    dispatchStartedAt: item.dispatchStartedAt,
     updatedAt: item.updatedAt,
     completedAt: item.completedAt,
     ssmStatus: item.ssmStatus,

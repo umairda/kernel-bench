@@ -14,24 +14,31 @@ describe('rpc_methods/start_run', () => {
     await expect(rpcStartRun({ runner: 'bad', benchmark: 'vector', params: { vectorLength: 1 } } as any)).rejects.toBeTruthy()
   })
 
-  it('starts execution on valid request', async () => {
+  it('queues a valid request and kicks the queue dispatcher', async () => {
     const ddb = { send: vi.fn().mockResolvedValue({}) }
-    const sfn = { send: vi.fn().mockResolvedValue({}) }
-    vi.doMock('../../../lambda/rpc_methods/shared', async () => {
-      const actual = await vi.importActual<any>('../../../lambda/rpc_methods/shared')
-      return {
-        ...actual,
-        acquireRunnerLock: vi.fn().mockResolvedValue({ ok: true }),
-        getState: vi.fn().mockResolvedValue('stopped'),
-      }
-    })
+    const dispatchNextQueuedRun = vi.fn().mockResolvedValue({ started: true, reason: 'started', runId: 'run-1' })
+    vi.doMock('../../../lambda/run_queue', () => ({ dispatchNextQueuedRun }))
     vi.doMock('../../../lambda/aws', async () => {
       const actual = await vi.importActual<any>('../../../lambda/aws')
-      return { ...actual, ddb, sfn, putMetric: vi.fn().mockResolvedValue(undefined) }
+      return { ...actual, ddb, putMetric: vi.fn().mockResolvedValue(undefined) }
     })
     const { rpcStartRun } = await import('../../../lambda/rpc_methods/start_run')
     const res = await rpcStartRun({ runner: 'cpu', benchmark: 'vector', params: { vectorLength: 2 } } as any)
-    expect(res.status).toBe('STARTING')
-    expect(sfn.send).toHaveBeenCalled()
+    expect(res.status).toBe('QUEUED')
+    expect(dispatchNextQueuedRun).toHaveBeenCalledWith('cpu')
+  })
+
+  it('queues a gpu run without checking current instance state', async () => {
+    const ddb = { send: vi.fn().mockResolvedValue({}) }
+    const dispatchNextQueuedRun = vi.fn().mockResolvedValue({ started: false, reason: 'busy', runId: 'run-1' })
+    vi.doMock('../../../lambda/run_queue', () => ({ dispatchNextQueuedRun }))
+    vi.doMock('../../../lambda/aws', async () => {
+      const actual = await vi.importActual<any>('../../../lambda/aws')
+      return { ...actual, ddb, putMetric: vi.fn().mockResolvedValue(undefined) }
+    })
+    const { rpcStartRun } = await import('../../../lambda/rpc_methods/start_run')
+    const res = await rpcStartRun({ runner: 'gpu', benchmark: 'vector', params: { vectorLength: 2 } } as any)
+    expect(res.status).toBe('QUEUED')
+    expect(dispatchNextQueuedRun).toHaveBeenCalledWith('gpu')
   })
 })

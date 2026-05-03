@@ -8,6 +8,7 @@ import { cloudwatchLogs, ddb, ec2, putMetric, s3, ssm } from '../aws'
 import { estimateBenchmarkTimeoutSeconds, type Benchmark } from '../benchmark_registry'
 import { mapSsmStatus, normalizePerformance, nowIso, reasonFromSsm, TERMINAL_STATUSES } from '../common'
 import { writeHistoryRecord } from '../history'
+import { dispatchNextQueuedRun, hasQueuedRuns } from '../run_queue'
 
 const RUNS_TABLE_NAME = process.env.RUNS_TABLE_NAME!
 const ARTIFACT_BUCKET_NAME = process.env.ARTIFACT_BUCKET_NAME!
@@ -126,6 +127,16 @@ async function releaseRunnerLock(runner: string | undefined, runId: string) {
       ExpressionAttributeValues: { ':owner': runId },
     }))
   } catch {}
+}
+
+async function dispatchNextOrStopRunner(runner: 'cpu' | 'gpu', instanceId: string) {
+  const dispatch = await dispatchNextQueuedRun(runner)
+  if (dispatch.started || dispatch.reason !== 'empty' || await hasQueuedRuns(runner)) {
+    return dispatch
+  }
+
+  try { await ec2.send(new StopInstancesCommand({ InstanceIds: [instanceId] })) } catch {}
+  return dispatch
 }
 
 async function currentState(instanceId: string): Promise<string | undefined> {
@@ -386,8 +397,8 @@ async function finalize(input: WorkflowInput) {
       performance: normalizePerformance(performance),
     })
   }
-  try { await ec2.send(new StopInstancesCommand({ InstanceIds: [input.instanceId] })) } catch {}
   await releaseRunnerLock(input.runner, input.runId)
+  await dispatchNextOrStopRunner(input.runner, input.instanceId)
   if (mapped === 'COMPLETED') await putMetric('RunCompleted', 1, input.runner, input.benchmark)
   if (mapped === 'FAILED') await putMetric('RunFailed', 1, input.runner, input.benchmark)
   if (mapped === 'CANCELLED') await putMetric('RunCancelled', 1, input.runner, input.benchmark)
@@ -416,8 +427,8 @@ async function fail(input: WorkflowInput, err: string) {
     ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
     ExpressionAttributeValues: values,
   }))
-  try { await ec2.send(new StopInstancesCommand({ InstanceIds: [input.instanceId] })) } catch {}
   await releaseRunnerLock(input.runner, input.runId)
+  await dispatchNextOrStopRunner(input.runner, input.instanceId)
   await putMetric('RunFailed', 1, input.runner, input.benchmark)
   return { ...input, status: 'FAILED', errorMessage: err }
 }
