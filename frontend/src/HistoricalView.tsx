@@ -14,6 +14,10 @@ import {
 } from './lib/api'
 
 type HistoryRunnerFilter = Runner | 'all'
+type ChartPoint = { x: number; y: number }
+type TooltipPayloadItem = {
+  dataKey?: unknown
+}
 
 function formatInteger(value: number) {
   if (!Number.isFinite(value)) {
@@ -31,6 +35,28 @@ function formatMilliseconds(value?: number | null) {
 
 function formatTooltipMilliseconds(value: unknown) {
   return formatMilliseconds(typeof value === 'number' ? value : Number(value))
+}
+
+function formatTooltipValue(value: unknown, name: unknown, item: TooltipPayloadItem) {
+  if (item.dataKey === 'x') {
+    return [formatInteger(Number(value)), String(name)] as [string, string]
+  }
+  return [formatTooltipMilliseconds(value), String(name)] as [string, string]
+}
+
+function buildXAxisTicks(series: ChartPoint[][], maxTicks = 8) {
+  const ticks = [...new Set(series.flat().map((point) => point.x).filter((value) => Number.isFinite(value) && value > 0))]
+    .sort((a, b) => a - b)
+  if (ticks.length <= maxTicks) {
+    return ticks
+  }
+
+  const selected = new Set<number>()
+  for (let i = 0; i < maxTicks; i += 1) {
+    const index = Math.round((i * (ticks.length - 1)) / (maxTicks - 1))
+    selected.add(ticks[index])
+  }
+  return [...selected].sort((a, b) => a - b)
 }
 
 function ChartPanel({
@@ -124,6 +150,27 @@ export default function HistoricalView({
   const matmulGpuPoints = useMemo(() => buildMatmulSeries(matmulHistory.data?.items ?? [], 'gpu'), [matmulHistory.data])
   const convolutionCpuPoints = useMemo(() => buildConvolutionSeries(convolutionHistory.data?.items ?? [], 'cpu'), [convolutionHistory.data])
   const convolutionGpuPoints = useMemo(() => buildConvolutionSeries(convolutionHistory.data?.items ?? [], 'gpu'), [convolutionHistory.data])
+  const vectorXTicks = useMemo(() => buildXAxisTicks([
+    vectorCpuAdd,
+    vectorGpuAdd,
+    vectorCpuSubtract,
+    vectorGpuSubtract,
+    vectorCpuMultiply,
+    vectorGpuMultiply,
+    vectorCpuDivide,
+    vectorGpuDivide,
+  ]), [
+    vectorCpuAdd,
+    vectorGpuAdd,
+    vectorCpuSubtract,
+    vectorGpuSubtract,
+    vectorCpuMultiply,
+    vectorGpuMultiply,
+    vectorCpuDivide,
+    vectorGpuDivide,
+  ])
+  const matmulXTicks = useMemo(() => buildXAxisTicks([matmulCpuPoints, matmulGpuPoints]), [matmulCpuPoints, matmulGpuPoints])
+  const convolutionXTicks = useMemo(() => buildXAxisTicks([convolutionCpuPoints, convolutionGpuPoints]), [convolutionCpuPoints, convolutionGpuPoints])
 
   return (
     <div className="space-y-4">
@@ -164,6 +211,7 @@ export default function HistoricalView({
                 scale="log"
                 domain={['auto', 'auto']}
                 name="Vector Length"
+                ticks={vectorXTicks}
                 tickFormatter={(value) => formatInteger(Number(value))}
               />
               <YAxis
@@ -175,7 +223,7 @@ export default function HistoricalView({
                 tickFormatter={(value) => `${Math.round(Number(value))}`}
                 label={{ value: 'ms', angle: -90, position: 'insideLeft' }}
               />
-              <Tooltip formatter={(value) => formatTooltipMilliseconds(value)} labelFormatter={(value) => `N=${formatInteger(Number(value))}`} />
+              <Tooltip formatter={formatTooltipValue} labelFormatter={(value) => `N=${formatInteger(Number(value))}`} />
               <Legend />
               <Scatter name="CPU Add" data={vectorCpuAdd} fill="#991b1b" />
               <Scatter name="GPU Add" data={vectorGpuAdd} fill="#facc15" />
@@ -206,6 +254,7 @@ export default function HistoricalView({
                 scale="log"
                 domain={['auto', 'auto']}
                 name="Matrix Size"
+                ticks={matmulXTicks}
                 tickFormatter={(value) => formatInteger(Number(value))}
               />
               <YAxis
@@ -217,7 +266,7 @@ export default function HistoricalView({
                 tickFormatter={(value) => `${Math.round(Number(value))}`}
                 label={{ value: 'ms', angle: -90, position: 'insideLeft' }}
               />
-              <Tooltip formatter={(value) => formatTooltipMilliseconds(value)} labelFormatter={(value) => `Size=${formatInteger(Number(value))}`} />
+              <Tooltip formatter={formatTooltipValue} labelFormatter={(value) => `Size=${formatInteger(Number(value))}`} />
               <Legend />
               <Scatter name="CPU Matmul" data={matmulCpuPoints} fill="#7c3aed" />
               <Scatter name="GPU Matmul" data={matmulGpuPoints} fill="#c4b5fd" />
@@ -243,6 +292,7 @@ export default function HistoricalView({
                   scale="log"
                   domain={['auto', 'auto']}
                   name="Input Area"
+                  ticks={convolutionXTicks}
                   tickFormatter={(value) => formatInteger(Number(value))}
                 />
                 <YAxis
@@ -254,7 +304,7 @@ export default function HistoricalView({
                   tickFormatter={(value) => `${Math.round(Number(value))}`}
                   label={{ value: 'ms', angle: -90, position: 'insideLeft' }}
                 />
-                <Tooltip formatter={(value) => formatTooltipMilliseconds(value)} />
+                <Tooltip formatter={formatTooltipValue} labelFormatter={(value) => `Input area=${formatInteger(Number(value))}`} />
                 <Legend />
                 <Scatter name="CPU Convolution" data={convolutionCpuPoints} fill="#db2777" />
                 <Scatter name="GPU Convolution" data={convolutionGpuPoints} fill="#f9a8d4" />
