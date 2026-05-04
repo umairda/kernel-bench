@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { type ReactNode, useMemo, useState } from 'react'
 import { CartesianGrid, Legend, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from 'recharts'
 import { Loader2 } from 'lucide-react'
 import { SegmentedControl } from './components/SegmentedControl'
@@ -95,7 +95,7 @@ function ChartPanel({
   subtitle: string
   loading?: boolean
   empty?: boolean
-  children?: React.ReactNode
+  children?: ReactNode
 }) {
   return (
     <GlowCard>
@@ -115,6 +115,16 @@ function ChartPanel({
         children
       )}
     </GlowCard>
+  )
+}
+
+function ChartFrame({ className = 'h-80', children }: { className?: string; children: ReactNode }) {
+  return (
+    <div className={`${className} min-h-72 min-w-0 overflow-hidden`}>
+      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240} debounce={50}>
+        {children}
+      </ResponsiveContainer>
+    </div>
   )
 }
 
@@ -327,41 +337,39 @@ export default function HistoricalView({
           vectorGpuDivide.length === 0
         }
       >
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 16, right: 24, bottom: 16, left: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(161,161,170,0.35)" />
-              <XAxis
-                type="number"
-                dataKey="x"
-                scale="log"
-                domain={['auto', 'auto']}
-                name="Vector Length"
-                ticks={vectorXTicks}
-                tickFormatter={(value) => formatInteger(Number(value))}
-              />
-              <YAxis
-                type="number"
-                dataKey="y"
-                scale="log"
-                domain={['auto', 'auto']}
-                name="Duration (ms)"
-                tickFormatter={(value) => `${Math.round(Number(value))}`}
-                label={{ value: 'ms', angle: -90, position: 'insideLeft' }}
-              />
-              <Tooltip formatter={formatTooltipValue} labelFormatter={(value) => `N=${formatInteger(Number(value))}`} />
-              <Legend />
-              <Scatter name="CPU Add" data={vectorCpuAdd} fill="#991b1b" />
-              <Scatter name="GPU Add" data={vectorGpuAdd} fill="#facc15" />
-              <Scatter name="CPU Subtract" data={vectorCpuSubtract} fill="#b91c1c" />
-              <Scatter name="GPU Subtract" data={vectorGpuSubtract} fill="#fde047" />
-              <Scatter name="CPU Multiply" data={vectorCpuMultiply} fill="#dc2626" />
-              <Scatter name="GPU Multiply" data={vectorGpuMultiply} fill="#f59e0b" />
-              <Scatter name="CPU Divide" data={vectorCpuDivide} fill="#ef4444" />
-              <Scatter name="GPU Divide" data={vectorGpuDivide} fill="#fef08a" />
-            </ScatterChart>
-          </ResponsiveContainer>
-        </div>
+        <ChartFrame>
+          <ScatterChart margin={{ top: 16, right: 24, bottom: 16, left: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(161,161,170,0.35)" />
+            <XAxis
+              type="number"
+              dataKey="x"
+              scale="log"
+              domain={['auto', 'auto']}
+              name="Vector Length"
+              ticks={vectorXTicks}
+              tickFormatter={(value) => formatInteger(Number(value))}
+            />
+            <YAxis
+              type="number"
+              dataKey="y"
+              scale="log"
+              domain={['auto', 'auto']}
+              name="Duration (ms)"
+              tickFormatter={(value) => `${Math.round(Number(value))}`}
+              label={{ value: 'ms', angle: -90, position: 'insideLeft' }}
+            />
+            <Tooltip formatter={formatTooltipValue} labelFormatter={(value) => `N=${formatInteger(Number(value))}`} />
+            <Legend />
+            <Scatter name="CPU Add" data={vectorCpuAdd} fill="#991b1b" />
+            <Scatter name="GPU Add" data={vectorGpuAdd} fill="#facc15" />
+            <Scatter name="CPU Subtract" data={vectorCpuSubtract} fill="#b91c1c" />
+            <Scatter name="GPU Subtract" data={vectorGpuSubtract} fill="#fde047" />
+            <Scatter name="CPU Multiply" data={vectorCpuMultiply} fill="#dc2626" />
+            <Scatter name="GPU Multiply" data={vectorGpuMultiply} fill="#f59e0b" />
+            <Scatter name="CPU Divide" data={vectorCpuDivide} fill="#ef4444" />
+            <Scatter name="GPU Divide" data={vectorGpuDivide} fill="#fef08a" />
+          </ScatterChart>
+        </ChartFrame>
       </ChartPanel>
 
       <ChartPanel
@@ -370,35 +378,33 @@ export default function HistoricalView({
         loading={matmulHistory.isPending}
         empty={matmulCpuPoints.length === 0 && matmulGpuPoints.length === 0}
       >
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 16, right: 24, bottom: 16, left: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(161,161,170,0.35)" />
-              <XAxis
-                type="number"
-                dataKey="x"
-                scale="log"
-                domain={['auto', 'auto']}
-                name="Matrix Size"
-                ticks={matmulXTicks}
-                tickFormatter={(value) => formatInteger(Number(value))}
-              />
-              <YAxis
-                type="number"
-                dataKey="y"
-                scale="log"
-                domain={['auto', 'auto']}
-                name="Duration (ms)"
-                tickFormatter={(value) => `${Math.round(Number(value))}`}
-                label={{ value: 'ms', angle: -90, position: 'insideLeft' }}
-              />
-              <Tooltip formatter={formatTooltipValue} labelFormatter={(value) => `Size=${formatInteger(Number(value))}`} />
-              <Legend />
-              <Scatter name="CPU Matmul" data={matmulCpuPoints} fill="#7c3aed" />
-              <Scatter name="GPU Matmul" data={matmulGpuPoints} fill="#c4b5fd" />
-            </ScatterChart>
-          </ResponsiveContainer>
-        </div>
+        <ChartFrame>
+          <ScatterChart margin={{ top: 16, right: 24, bottom: 16, left: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(161,161,170,0.35)" />
+            <XAxis
+              type="number"
+              dataKey="x"
+              scale="log"
+              domain={['auto', 'auto']}
+              name="Matrix Size"
+              ticks={matmulXTicks}
+              tickFormatter={(value) => formatInteger(Number(value))}
+            />
+            <YAxis
+              type="number"
+              dataKey="y"
+              scale="log"
+              domain={['auto', 'auto']}
+              name="Duration (ms)"
+              tickFormatter={(value) => `${Math.round(Number(value))}`}
+              label={{ value: 'ms', angle: -90, position: 'insideLeft' }}
+            />
+            <Tooltip formatter={formatTooltipValue} labelFormatter={(value) => `Size=${formatInteger(Number(value))}`} />
+            <Legend />
+            <Scatter name="CPU Matmul" data={matmulCpuPoints} fill="#7c3aed" />
+            <Scatter name="GPU Matmul" data={matmulGpuPoints} fill="#c4b5fd" />
+          </ScatterChart>
+        </ChartFrame>
       </ChartPanel>
 
       <ChartPanel
@@ -408,35 +414,33 @@ export default function HistoricalView({
         empty={convolutionCpuPoints.length === 0 && convolutionGpuPoints.length === 0}
       >
         <div className="space-y-4">
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <ScatterChart margin={{ top: 16, right: 24, bottom: 16, left: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(161,161,170,0.35)" />
-                <XAxis
-                  type="number"
-                  dataKey="x"
-                  scale="log"
-                  domain={['auto', 'auto']}
-                  name="Input Area"
-                  ticks={convolutionXTicks}
-                  tickFormatter={(value) => formatInteger(Number(value))}
-                />
-                <YAxis
-                  type="number"
-                  dataKey="y"
-                  scale="log"
-                  domain={['auto', 'auto']}
-                  name="Duration (ms)"
-                  tickFormatter={(value) => `${Math.round(Number(value))}`}
-                  label={{ value: 'ms', angle: -90, position: 'insideLeft' }}
-                />
-                <Tooltip formatter={formatTooltipValue} labelFormatter={(value) => `Input area=${formatInteger(Number(value))}`} />
-                <Legend />
-                <Scatter name="CPU Convolution" data={convolutionCpuPoints} fill="#db2777" />
-                <Scatter name="GPU Convolution" data={convolutionGpuPoints} fill="#f9a8d4" />
-              </ScatterChart>
-            </ResponsiveContainer>
-          </div>
+          <ChartFrame>
+            <ScatterChart margin={{ top: 16, right: 24, bottom: 16, left: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(161,161,170,0.35)" />
+              <XAxis
+                type="number"
+                dataKey="x"
+                scale="log"
+                domain={['auto', 'auto']}
+                name="Input Area"
+                ticks={convolutionXTicks}
+                tickFormatter={(value) => formatInteger(Number(value))}
+              />
+              <YAxis
+                type="number"
+                dataKey="y"
+                scale="log"
+                domain={['auto', 'auto']}
+                name="Duration (ms)"
+                tickFormatter={(value) => `${Math.round(Number(value))}`}
+                label={{ value: 'ms', angle: -90, position: 'insideLeft' }}
+              />
+              <Tooltip formatter={formatTooltipValue} labelFormatter={(value) => `Input area=${formatInteger(Number(value))}`} />
+              <Legend />
+              <Scatter name="CPU Convolution" data={convolutionCpuPoints} fill="#db2777" />
+              <Scatter name="GPU Convolution" data={convolutionGpuPoints} fill="#f9a8d4" />
+            </ScatterChart>
+          </ChartFrame>
           <div className="rounded-xl border border-zinc-300 bg-zinc-100 p-4 text-sm text-zinc-700 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-300">
             <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
               <div>
@@ -477,35 +481,33 @@ export default function HistoricalView({
                 No convolution runs match these filters.
               </div>
             ) : (
-              <div className="mt-4 h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ScatterChart margin={{ top: 16, right: 24, bottom: 16, left: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(161,161,170,0.35)" />
-                    <XAxis
-                      type="number"
-                      dataKey="x"
-                      scale="log"
-                      domain={['auto', 'auto']}
-                      name="Input Area"
-                      ticks={filteredConvolutionXTicks}
-                      tickFormatter={(value) => formatInteger(Number(value))}
-                    />
-                    <YAxis
-                      type="number"
-                      dataKey="y"
-                      scale="log"
-                      domain={['auto', 'auto']}
-                      name="Duration (ms)"
-                      tickFormatter={(value) => `${Math.round(Number(value))}`}
-                      label={{ value: 'ms', angle: -90, position: 'insideLeft' }}
-                    />
-                    <Tooltip formatter={formatConvolutionTooltipValue} labelFormatter={(value) => `Input area=${formatInteger(Number(value))}`} />
-                    <Legend />
-                    <Scatter name="CPU Filtered Convolution" data={filteredConvolutionCpuPoints} fill="#be123c" />
-                    <Scatter name="GPU Filtered Convolution" data={filteredConvolutionGpuPoints} fill="#f59e0b" />
-                  </ScatterChart>
-                </ResponsiveContainer>
-              </div>
+              <ChartFrame className="mt-4 h-72">
+                <ScatterChart margin={{ top: 16, right: 24, bottom: 16, left: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(161,161,170,0.35)" />
+                  <XAxis
+                    type="number"
+                    dataKey="x"
+                    scale="log"
+                    domain={['auto', 'auto']}
+                    name="Input Area"
+                    ticks={filteredConvolutionXTicks}
+                    tickFormatter={(value) => formatInteger(Number(value))}
+                  />
+                  <YAxis
+                    type="number"
+                    dataKey="y"
+                    scale="log"
+                    domain={['auto', 'auto']}
+                    name="Duration (ms)"
+                    tickFormatter={(value) => `${Math.round(Number(value))}`}
+                    label={{ value: 'ms', angle: -90, position: 'insideLeft' }}
+                  />
+                  <Tooltip formatter={formatConvolutionTooltipValue} labelFormatter={(value) => `Input area=${formatInteger(Number(value))}`} />
+                  <Legend />
+                  <Scatter name="CPU Filtered Convolution" data={filteredConvolutionCpuPoints} fill="#be123c" />
+                  <Scatter name="GPU Filtered Convolution" data={filteredConvolutionGpuPoints} fill="#f59e0b" />
+                </ScatterChart>
+              </ChartFrame>
             )}
           </div>
 
