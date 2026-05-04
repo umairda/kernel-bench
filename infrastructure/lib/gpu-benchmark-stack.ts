@@ -41,11 +41,13 @@ export class KernelBenchStack extends cdk.Stack {
       service: 'states',
       resource: 'stateMachine',
       resourceName: runWorkflowStateMachineName,
+      arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
     });
     const runWorkflowExecutionArn = cdk.Stack.of(this).formatArn({
       service: 'states',
       resource: 'execution',
       resourceName: `${runWorkflowStateMachineName}:*`,
+      arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
     });
     const ssmOutputLogGroup = new logs.LogGroup(this, 'KernelBench-SsmOutputLogGroup', {
       logGroupName: '/kernelbench/ssm-output',
