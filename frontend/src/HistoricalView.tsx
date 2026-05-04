@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { CartesianGrid, Legend, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from 'recharts'
 import { Loader2 } from 'lucide-react'
 import { SegmentedControl } from './components/SegmentedControl'
@@ -17,6 +17,24 @@ type HistoryRunnerFilter = Runner | 'all'
 type ChartPoint = { x: number; y: number }
 type TooltipPayloadItem = {
   dataKey?: unknown
+}
+type ConvolutionScatterPoint = ChartPoint & {
+  runId: string
+  runner: Runner
+  inputH: number
+  inputW: number
+  inputC: number
+  filterOutC: number
+  filterH: number
+  filterW: number
+  label: string
+}
+type HeatmapCell = {
+  key: string
+  inputArea: number
+  filterOutC: number
+  cpuMs: number | null
+  gpuMs: number | null
 }
 
 function formatInteger(value: number) {
@@ -40,6 +58,13 @@ function formatTooltipMilliseconds(value: unknown) {
 function formatTooltipValue(value: unknown, name: unknown, item: TooltipPayloadItem) {
   if (item.dataKey === 'x') {
     return [formatInteger(Number(value)), String(name)] as [string, string]
+  }
+  return [formatTooltipMilliseconds(value), String(name)] as [string, string]
+}
+
+function formatConvolutionTooltipValue(value: unknown, name: unknown, item: TooltipPayloadItem) {
+  if (item.dataKey === 'x') {
+    return [formatInteger(Number(value)), 'Input area'] as [string, string]
   }
   return [formatTooltipMilliseconds(value), String(name)] as [string, string]
 }
@@ -131,6 +156,84 @@ export function buildConvolutionSeries(points: ConvolutionHistoryPoint[], runner
     }))
 }
 
+function sortedUniqueNumbers(values: number[]) {
+  return [...new Set(values.filter((value) => Number.isFinite(value) && value > 0))].sort((a, b) => a - b)
+}
+
+export function buildDimensionOptions(points: ConvolutionHistoryPoint[], key: 'inputH' | 'inputW') {
+  return sortedUniqueNumbers(points.map((point) => point[key]))
+}
+
+export function buildFilteredConvolutionSeries(
+  points: ConvolutionHistoryPoint[],
+  runner: Runner,
+  filters: { inputH: number | 'all'; inputW: number | 'all' },
+): ConvolutionScatterPoint[] {
+  return points
+    .filter((point) => point.runner === runner && positiveNumber(point.inputArea) && positiveNumber(point.convolutionMs))
+    .filter((point) => filters.inputH === 'all' || point.inputH === filters.inputH)
+    .filter((point) => filters.inputW === 'all' || point.inputW === filters.inputW)
+    .map((point) => ({
+      x: point.inputArea,
+      y: point.convolutionMs as number,
+      runId: point.runId,
+      runner: point.runner,
+      inputH: point.inputH,
+      inputW: point.inputW,
+      inputC: point.inputC,
+      filterOutC: point.filterOutC,
+      filterH: point.filterH,
+      filterW: point.filterW,
+      label: `${point.inputH}x${point.inputW} · C=${point.inputC} · K=${point.filterOutC}`,
+    }))
+}
+
+export function buildConvolutionHeatmap(points: ConvolutionHistoryPoint[]): HeatmapCell[] {
+  const grouped = new Map<string, { inputArea: number; filterOutC: number; cpu: number[]; gpu: number[] }>()
+  for (const point of points) {
+    if (!positiveNumber(point.inputArea) || !positiveNumber(point.filterOutC) || !positiveNumber(point.convolutionMs)) {
+      continue
+    }
+    const key = `${point.inputArea}:${point.filterOutC}`
+    const entry = grouped.get(key) ?? { inputArea: point.inputArea, filterOutC: point.filterOutC, cpu: [], gpu: [] }
+    entry[point.runner].push(point.convolutionMs as number)
+    grouped.set(key, entry)
+  }
+
+  const average = (values: number[]) => values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null
+  return [...grouped.entries()].map(([key, entry]) => ({
+    key,
+    inputArea: entry.inputArea,
+    filterOutC: entry.filterOutC,
+    cpuMs: average(entry.cpu),
+    gpuMs: average(entry.gpu),
+  })).sort((a, b) => {
+    const byArea = a.inputArea - b.inputArea
+    return byArea !== 0 ? byArea : a.filterOutC - b.filterOutC
+  })
+}
+
+function heatIntensity(value: number | null, max: number) {
+  if (!value || !Number.isFinite(value) || max <= 0) {
+    return 'rgba(113,113,122,0.12)'
+  }
+  const normalized = Math.max(0.12, Math.min(1, value / max))
+  return `rgba(8, 145, 178, ${0.18 + normalized * 0.72})`
+}
+
+function HeatmapValue({ label, value, max }: { label: string; value: number | null; max: number }) {
+  return (
+    <div
+      className="rounded-lg border border-white/20 px-3 py-2 text-xs font-semibold text-zinc-950 dark:text-white"
+      style={{ background: heatIntensity(value, max) }}
+      title={`${label}: ${formatMilliseconds(value)}`}
+    >
+      <span className="block text-[10px] uppercase tracking-wide opacity-75">{label}</span>
+      <span>{formatMilliseconds(value)}</span>
+    </div>
+  )
+}
+
 export default function HistoricalView({
   historyRunner,
   onRunnerChange,
@@ -154,6 +257,9 @@ export default function HistoricalView({
   const matmulGpuPoints = useMemo(() => buildMatmulSeries(matmulHistory.data?.items ?? [], 'gpu'), [matmulHistory.data])
   const convolutionCpuPoints = useMemo(() => buildConvolutionSeries(convolutionHistory.data?.items ?? [], 'cpu'), [convolutionHistory.data])
   const convolutionGpuPoints = useMemo(() => buildConvolutionSeries(convolutionHistory.data?.items ?? [], 'gpu'), [convolutionHistory.data])
+  const convolutionItems = convolutionHistory.data?.items ?? []
+  const [convInputH, setConvInputH] = useState<number | 'all'>('all')
+  const [convInputW, setConvInputW] = useState<number | 'all'>('all')
   const vectorXTicks = useMemo(() => buildXAxisTicks([
     vectorCpuAdd,
     vectorGpuAdd,
@@ -175,6 +281,22 @@ export default function HistoricalView({
   ])
   const matmulXTicks = useMemo(() => buildXAxisTicks([matmulCpuPoints, matmulGpuPoints]), [matmulCpuPoints, matmulGpuPoints])
   const convolutionXTicks = useMemo(() => buildXAxisTicks([convolutionCpuPoints, convolutionGpuPoints]), [convolutionCpuPoints, convolutionGpuPoints])
+  const convolutionInputHOptions = useMemo(() => buildDimensionOptions(convolutionItems, 'inputH'), [convolutionItems])
+  const convolutionInputWOptions = useMemo(() => buildDimensionOptions(convolutionItems, 'inputW'), [convolutionItems])
+  const filteredConvolutionCpuPoints = useMemo(
+    () => buildFilteredConvolutionSeries(convolutionItems, 'cpu', { inputH: convInputH, inputW: convInputW }),
+    [convInputH, convInputW, convolutionItems],
+  )
+  const filteredConvolutionGpuPoints = useMemo(
+    () => buildFilteredConvolutionSeries(convolutionItems, 'gpu', { inputH: convInputH, inputW: convInputW }),
+    [convInputH, convInputW, convolutionItems],
+  )
+  const filteredConvolutionXTicks = useMemo(() => buildXAxisTicks([filteredConvolutionCpuPoints, filteredConvolutionGpuPoints]), [filteredConvolutionCpuPoints, filteredConvolutionGpuPoints])
+  const convolutionHeatmap = useMemo(() => buildConvolutionHeatmap(convolutionItems), [convolutionItems])
+  const heatmapMax = useMemo(() => Math.max(
+    0,
+    ...convolutionHeatmap.flatMap((cell) => [cell.cpuMs ?? 0, cell.gpuMs ?? 0]),
+  ), [convolutionHeatmap])
 
   return (
     <div className="space-y-4">
@@ -316,8 +438,104 @@ export default function HistoricalView({
             </ResponsiveContainer>
           </div>
           <div className="rounded-xl border border-zinc-300 bg-zinc-100 p-4 text-sm text-zinc-700 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-300">
-            <p className="font-semibold text-zinc-900 dark:text-zinc-100">Recommended next views</p>
-            <p className="mt-2">A filtered scatter by input height/width is the easiest next step. After that, a heatmap of input area vs. output channels would likely reveal the clearest performance trends.</p>
+            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+              <div>
+                <p className="font-semibold text-zinc-900 dark:text-zinc-100">Filtered Scatter: Input Height / Width</p>
+                <p className="mt-1">Filter convolution history to compare CPU and GPU timings for specific input dimensions.</p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-300">
+                  Input H
+                  <select
+                    value={convInputH}
+                    onChange={(event) => setConvInputH(event.target.value === 'all' ? 'all' : Number(event.target.value))}
+                    className="mt-1 h-10 w-full rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 dark:border-white/10 dark:bg-zinc-900 dark:text-white"
+                  >
+                    <option value="all">All heights</option>
+                    {convolutionInputHOptions.map((value) => (
+                      <option key={value} value={value}>{formatInteger(value)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-300">
+                  Input W
+                  <select
+                    value={convInputW}
+                    onChange={(event) => setConvInputW(event.target.value === 'all' ? 'all' : Number(event.target.value))}
+                    className="mt-1 h-10 w-full rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 dark:border-white/10 dark:bg-zinc-900 dark:text-white"
+                  >
+                    <option value="all">All widths</option>
+                    {convolutionInputWOptions.map((value) => (
+                      <option key={value} value={value}>{formatInteger(value)}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
+            {filteredConvolutionCpuPoints.length === 0 && filteredConvolutionGpuPoints.length === 0 ? (
+              <div className="mt-4 flex h-52 items-center justify-center rounded-lg border border-dashed border-zinc-300 text-sm text-zinc-500 dark:border-white/10 dark:text-zinc-400">
+                No convolution runs match these filters.
+              </div>
+            ) : (
+              <div className="mt-4 h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart margin={{ top: 16, right: 24, bottom: 16, left: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(161,161,170,0.35)" />
+                    <XAxis
+                      type="number"
+                      dataKey="x"
+                      scale="log"
+                      domain={['auto', 'auto']}
+                      name="Input Area"
+                      ticks={filteredConvolutionXTicks}
+                      tickFormatter={(value) => formatInteger(Number(value))}
+                    />
+                    <YAxis
+                      type="number"
+                      dataKey="y"
+                      scale="log"
+                      domain={['auto', 'auto']}
+                      name="Duration (ms)"
+                      tickFormatter={(value) => `${Math.round(Number(value))}`}
+                      label={{ value: 'ms', angle: -90, position: 'insideLeft' }}
+                    />
+                    <Tooltip formatter={formatConvolutionTooltipValue} labelFormatter={(value) => `Input area=${formatInteger(Number(value))}`} />
+                    <Legend />
+                    <Scatter name="CPU Filtered Convolution" data={filteredConvolutionCpuPoints} fill="#be123c" />
+                    <Scatter name="GPU Filtered Convolution" data={filteredConvolutionGpuPoints} fill="#f59e0b" />
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-zinc-300 bg-zinc-100 p-4 text-sm text-zinc-700 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-300">
+            <p className="font-semibold text-zinc-900 dark:text-zinc-100">Heatmap: Input Area vs. Output Channels</p>
+            <p className="mt-1">Each row groups runs by input area and filter output channels. Darker cells indicate slower average operation duration.</p>
+            {convolutionHeatmap.length === 0 ? (
+              <div className="mt-4 flex h-40 items-center justify-center rounded-lg border border-dashed border-zinc-300 text-sm text-zinc-500 dark:border-white/10 dark:text-zinc-400">
+                No convolution heatmap data yet.
+              </div>
+            ) : (
+              <div className="mt-4 overflow-x-auto">
+                <div className="min-w-[560px] space-y-2">
+                  <div className="grid grid-cols-[1fr_1fr_1fr_1fr] gap-2 px-1 text-[10px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                    <span>Input Area</span>
+                    <span>Output Channels</span>
+                    <span>CPU Avg</span>
+                    <span>GPU Avg</span>
+                  </div>
+                  {convolutionHeatmap.map((cell) => (
+                    <div key={cell.key} className="grid grid-cols-[1fr_1fr_1fr_1fr] items-center gap-2 rounded-xl border border-zinc-300 bg-white/70 p-2 dark:border-white/10 dark:bg-zinc-900/70">
+                      <span className="font-mono text-xs">{formatInteger(cell.inputArea)}</span>
+                      <span className="font-mono text-xs">{formatInteger(cell.filterOutC)}</span>
+                      <HeatmapValue label="CPU" value={cell.cpuMs} max={heatmapMax} />
+                      <HeatmapValue label="GPU" value={cell.gpuMs} max={heatmapMax} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </ChartPanel>
