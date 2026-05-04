@@ -200,7 +200,17 @@ function SortableQueuedRun({
   )
 }
 
-function ActiveRunRow({ run, isOpen, onToggle }: { run: RunRecord; isOpen: boolean; onToggle: (runId: string) => void }) {
+function ActiveRunRow({
+  run,
+  isOpen,
+  instanceState,
+  onToggle,
+}: {
+  run: RunRecord
+  isOpen: boolean
+  instanceState: string
+  onToggle: (runId: string) => void
+}) {
   return (
     <div className="rounded-xl border border-emerald-300 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-950/20">
       <div className="flex flex-col gap-3 p-3 md:flex-row md:items-center md:justify-between">
@@ -234,29 +244,12 @@ function ActiveRunRow({ run, isOpen, onToggle }: { run: RunRecord; isOpen: boole
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="border-t border-emerald-300 p-3 text-xs text-zinc-700 dark:border-emerald-500/30 dark:text-zinc-300">
-              <dl className="grid gap-2 md:grid-cols-2">
-                <div>
-                  <dt className="font-semibold text-zinc-900 dark:text-zinc-100">Run ID</dt>
-                  <dd className="break-all">{run.runId}</dd>
-                </div>
-                <div>
-                  <dt className="font-semibold text-zinc-900 dark:text-zinc-100">Started At</dt>
-                  <dd>{formatDateTime(run.dispatchStartedAt ?? run.updatedAt ?? run.createdAt)}</dd>
-                </div>
-                <div>
-                  <dt className="font-semibold text-zinc-900 dark:text-zinc-100">Runner</dt>
-                  <dd>{run.runner.toUpperCase()}</dd>
-                </div>
-                <div>
-                  <dt className="font-semibold text-zinc-900 dark:text-zinc-100">Benchmark</dt>
-                  <dd>{benchmarkLabel(run.benchmark)}</dd>
-                </div>
-                <div className="md:col-span-2">
-                  <dt className="font-semibold text-zinc-900 dark:text-zinc-100">Parameters</dt>
-                  <dd>{formatBenchmarkParams(run.benchmark, run.params)}</dd>
-                </div>
-              </dl>
+            <div className="border-t border-emerald-300 p-3 dark:border-emerald-500/30">
+              <RunStatusCard
+                title={`${run.runner.toUpperCase()} ${benchmarkLabel(run.benchmark)}`}
+                instanceState={instanceState}
+                run={run}
+              />
             </div>
           </motion.div>
         ) : null}
@@ -396,7 +389,7 @@ export function InProgressRunsCard({
         ) : null}
         {activeRun ? (
           <div className="mt-4">
-            <ActiveRunRow run={activeRun} isOpen={openRunIds.has(activeRun.runId)} onToggle={toggleRun} />
+          <ActiveRunRow run={activeRun} instanceState={runner === 'cpu' ? cpuState : gpuState} isOpen={openRunIds.has(activeRun.runId)} onToggle={toggleRun} />
           </div>
         ) : null}
         {queueItems.length === 0 ? (

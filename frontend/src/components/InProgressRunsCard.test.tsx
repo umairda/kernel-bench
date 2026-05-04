@@ -66,11 +66,26 @@ describe('InProgressRunsCard', () => {
 
   it('shows active runs above queued runs without priority controls', () => {
     renderWithClient([
-      run({ runId: 'active-cpu-run', status: 'RUNNING', runner: 'cpu', dispatchStartedAt: '2026-05-03T10:02:00Z' }),
+      run({
+        runId: 'active-cpu-run',
+        status: 'RUNNING',
+        runner: 'cpu',
+        dispatchStartedAt: '2026-05-03T10:02:00Z',
+        progress: {
+          op: 'vector-add',
+          backend: 'cpu',
+          status: 'running',
+          elementsDone: 64,
+          totalElements: 128,
+          percent: 50,
+        },
+      }),
       run({ runId: 'queued-cpu-run', runner: 'cpu', queuedAt: '2026-05-03T10:03:00Z' }),
     ])
 
     expect(screen.getByText('Active: CPU Vector')).toBeInTheDocument()
+    expect(screen.getByText('Execution Progress')).toBeInTheDocument()
+    expect(screen.getByText('64 / 128')).toBeInTheDocument()
     expect(screen.getByText('1 active CPU run')).toBeInTheDocument()
     expect(screen.getByText('Priority 1: CPU Vector')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /drag queued run 2/i })).not.toBeInTheDocument()
