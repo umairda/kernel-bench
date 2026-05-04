@@ -47,14 +47,19 @@ namespace
 
 } // namespace
 
-StatusCode gpu_vector_op(const VectorOpParams &params, const std::vector<float> &a, const std::vector<float> &b, std::vector<float> &out)
+StatusCode gpu_vector_op(
+    const VectorOpParams &params,
+    const std::vector<float> &a,
+    const std::vector<float> &b,
+    std::vector<float> &out,
+    const bool validate_division)
 {
     if (a.size() != params.length || b.size() != params.length || out.size() != params.length)
     {
         return StatusCode::InvalidArgument;
     }
 
-    if (params.op_type == VectorOperation::Divide)
+    if (validate_division && params.op_type == VectorOperation::Divide)
     {
         for (IndexType i = 0; i < b.size(); ++i)
         {

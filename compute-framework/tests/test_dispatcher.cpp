@@ -224,6 +224,39 @@ TEST(Dispatcher, InvalidOutputLengthReturnsInvalidArgument)
     EXPECT_EQ(result.backend_used, Backend::None);
 }
 
+TEST(Dispatcher, DivideByZeroIsValidatedBeforeTimedDispatch)
+{
+    RuntimeContext ctx{
+        .capabilities = {
+            .gpu_available = false,
+            .cpu_available = true
+        },
+        .config = {
+            .backend_config = {.preferred = Backend::CPU, .allow_fallback = false},
+            .use_pinned_memory = false,
+            .use_async_transfers = false
+        }
+    };
+
+    VectorOpParams params{
+        .length = 3,
+        .op_type = VectorOperation::Divide
+    };
+
+    Result result{};
+    std::vector<float> v1{8, 10, 12};
+    std::vector<float> v2{2, 0, 3};
+    std::vector<float> out(3, 0);
+
+    const StatusCode status_code = dispatch_vector_operation(ctx, params, v1, v2, out, result);
+
+    EXPECT_EQ(status_code, StatusCode::InvalidArgument);
+    EXPECT_EQ(result.status, StatusCode::InvalidArgument);
+    EXPECT_EQ(result.backend_used, Backend::None);
+    EXPECT_DOUBLE_EQ(result.kernel_ms, 0.0);
+    EXPECT_DOUBLE_EQ(result.total_ms, 0.0);
+}
+
 TEST(Dispatcher, AutoBackendWithNoCapabilitiesReturnsBackendUnavailable)
 {
     RuntimeContext ctx{

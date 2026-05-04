@@ -1,6 +1,6 @@
 #include "framework/gpu_ops.hpp"
 
-StatusCode gpu_vector_op(const VectorOpParams &, const std::vector<float> &, const std::vector<float> &, std::vector<float> &)
+StatusCode gpu_vector_op(const VectorOpParams &, const std::vector<float> &, const std::vector<float> &, std::vector<float> &, const bool)
 {
     return StatusCode::NotImplemented;
 }

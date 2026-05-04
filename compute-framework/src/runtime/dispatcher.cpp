@@ -61,6 +61,23 @@ private:
     bool acquired_ = false;
     Backend backend_ = Backend::None;
 };
+
+bool has_zero_denominator(const VectorOpParams &params, const std::vector<float> &denominators)
+{
+    if (params.op_type != VectorOperation::Divide)
+    {
+        return false;
+    }
+
+    for (const float value : denominators)
+    {
+        if (value == 0.0f)
+        {
+            return true;
+        }
+    }
+    return false;
+}
 } // namespace
 
 StatusCode probe_backend_capabilities(BackendCapabilities &out_caps)
@@ -172,16 +189,23 @@ StatusCode dispatch_vector_operation(const RuntimeContext &ctx, const VectorOpPa
         }
     }
 
+    if ((chosen == Backend::CPU || chosen == Backend::GPU) && has_zero_denominator(params, v2))
+    {
+        result.status = StatusCode::InvalidArgument;
+        result.backend_used = Backend::None;
+        return result.status;
+    }
+
     Stopwatch stopwatch;
     stopwatch.start();
     if (chosen == Backend::GPU)
     {
-        result.status = gpu_vector_op(params, v1, v2, out);
+        result.status = gpu_vector_op(params, v1, v2, out, false);
         result.backend_used = (result.status == StatusCode::Success) ? Backend::GPU : Backend::None;
     }
     else if (chosen == Backend::CPU)
     {
-        result.status = cpu_vector_op(params, v1, v2, out);
+        result.status = cpu_vector_op(params, v1, v2, out, false);
         result.backend_used = (result.status == StatusCode::Success) ? Backend::CPU : Backend::None;
     }
     else

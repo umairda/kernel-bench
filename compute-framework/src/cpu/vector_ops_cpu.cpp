@@ -158,7 +158,12 @@ namespace
     }
 } // namespace
 
-StatusCode cpu_vector_op(const VectorOpParams &params, const std::vector<float> &a, const std::vector<float> &b, std::vector<float> &out)
+StatusCode cpu_vector_op(
+    const VectorOpParams &params,
+    const std::vector<float> &a,
+    const std::vector<float> &b,
+    std::vector<float> &out,
+    const bool validate_division)
 {
     if (a.size() != params.length || b.size() != params.length || out.size() != params.length)
     {
@@ -193,21 +198,24 @@ StatusCode cpu_vector_op(const VectorOpParams &params, const std::vector<float> 
         break;
     case VectorOperation::Divide:
     {
-        std::atomic<bool> has_zero{false};
-        parallel_for_range(params.length, op_name(params.op_type), [&](const IndexType begin, const IndexType end)
-                           {
-                               for (IndexType i = begin; i < end; ++i)
-                               {
-                                   if (b[i] == 0.0f)
-                                   {
-                                       has_zero.store(true, std::memory_order_relaxed);
-                                       return;
-                                   }
-                               } });
-
-        if (has_zero.load(std::memory_order_relaxed))
+        if (validate_division)
         {
-            return StatusCode::InvalidArgument;
+            std::atomic<bool> has_zero{false};
+            parallel_for_range(params.length, op_name(params.op_type), [&](const IndexType begin, const IndexType end)
+                               {
+                                   for (IndexType i = begin; i < end; ++i)
+                                   {
+                                       if (b[i] == 0.0f)
+                                       {
+                                           has_zero.store(true, std::memory_order_relaxed);
+                                           return;
+                                       }
+                                   } });
+
+            if (has_zero.load(std::memory_order_relaxed))
+            {
+                return StatusCode::InvalidArgument;
+            }
         }
 
         parallel_for_range(params.length, op_name(params.op_type), [&](const IndexType begin, const IndexType end)
