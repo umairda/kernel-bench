@@ -90,7 +90,8 @@ describe('RunHistoryView', () => {
     expect(screen.getByText('1.1min')).toBeInTheDocument()
     expect(screen.getByText('Failed')).toBeInTheDocument()
     expect(screen.getByText('Success')).toBeInTheDocument()
-    expect(screen.getByText('{"vectorLength":128}')).toBeInTheDocument()
+    expect(screen.getByText('n=128')).toBeInTheDocument()
+    expect(screen.getByText('64x64 * 64x64')).toBeInTheDocument()
   })
 
   it('sorts by operation duration when the header is clicked', () => {

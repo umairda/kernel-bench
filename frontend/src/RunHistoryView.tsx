@@ -1,14 +1,14 @@
 import { useMemo, useState } from 'react'
 import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
-import { benchmarkLabel } from './benchmarks/benchmarkRegistry'
+import { benchmarkLabel, formatBenchmarkParams } from './benchmarks/benchmarkRegistry'
 import { GlowCard } from './components/aceternity/glow-card'
 import { type RunHistoryRow, useGetRunHistoryQuery } from './lib/api'
 
 type SortKey = 'runId' | 'createdAt' | 'runner' | 'operation' | 'parameters' | 'result' | 'duration'
 type SortDirection = 'asc' | 'desc'
 
-function formatParams(params: Record<string, number> | undefined) {
-  return JSON.stringify(params ?? {})
+function formatParams(run: RunHistoryRow) {
+  return formatBenchmarkParams(run.benchmark, run.params)
 }
 
 function resultLabel(status: RunHistoryRow['status']) {
@@ -82,7 +82,7 @@ export default function RunHistoryView() {
         return compareValues(benchmarkLabel(left.benchmark), benchmarkLabel(right.benchmark), sortDirection)
       }
       if (sortKey === 'parameters') {
-        return compareValues(formatParams(left.params), formatParams(right.params), sortDirection)
+        return compareValues(formatParams(left), formatParams(right), sortDirection)
       }
       if (sortKey === 'result') {
         return compareValues(resultLabel(left.status), resultLabel(right.status), sortDirection)
@@ -166,7 +166,7 @@ export default function RunHistoryView() {
                   <td className="px-3 py-3 text-xs text-zinc-700 dark:text-zinc-200">{formatCreatedAt(row.createdAt)}</td>
                   <td className="px-3 py-3 uppercase text-zinc-700 dark:text-zinc-200">{row.runner}</td>
                   <td className="px-3 py-3 text-zinc-700 dark:text-zinc-200">{benchmarkLabel(row.benchmark)}</td>
-                  <td className="px-3 py-3 font-mono text-xs text-zinc-600 dark:text-zinc-300 break-words whitespace-normal">{formatParams(row.params)}</td>
+                  <td className="px-3 py-3 font-mono text-xs text-zinc-600 dark:text-zinc-300 break-words whitespace-normal">{formatParams(row)}</td>
                   <td className="px-3 py-3 text-zinc-700 dark:text-zinc-200">{formatDuration(totalOperationDuration(row))}</td>
                   <td className="px-3 py-3">
                     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-rose-500/10 text-rose-700 dark:text-rose-300'}`}>
