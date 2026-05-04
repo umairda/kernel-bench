@@ -81,9 +81,35 @@ function latestRunByKey(items: RunRecord[]) {
   return latestByKey
 }
 
-function pickDisplayedRun(current: RunRecord | undefined, latest: RunRecord | undefined, expectedRunId: string | null) {
-  if (current) {
+function mergeDisplayedRun(current: RunRecord | undefined, latest: RunRecord | undefined) {
+  if (!current) {
+    return latest
+  }
+  if (!latest) {
     return current
+  }
+  if (current.runId !== latest.runId) {
+    return current
+  }
+
+  return {
+    ...latest,
+    ...current,
+    startupProgress: current.startupProgress ?? latest.startupProgress,
+    progress: current.progress ?? latest.progress,
+    performance: current.performance ?? latest.performance,
+    reason: current.reason ?? latest.reason,
+    error: current.error ?? latest.error,
+    completedAt: current.completedAt ?? latest.completedAt,
+    updatedAt: current.updatedAt ?? latest.updatedAt,
+    ssmStatus: current.ssmStatus ?? latest.ssmStatus,
+  } satisfies RunRecord
+}
+
+function pickDisplayedRun(current: RunRecord | undefined, latest: RunRecord | undefined, expectedRunId: string | null) {
+  const merged = mergeDisplayedRun(current, latest)
+  if (merged) {
+    return merged
   }
   if (!latest) {
     return undefined

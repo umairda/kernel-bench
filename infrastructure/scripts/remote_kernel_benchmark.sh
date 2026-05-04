@@ -241,7 +241,7 @@ def parse_kernel_ms(output):
     if not metrics_line:
         return None
 
-    match = re.search(r"kernel_ms=([0-9]+(?:\.[0-9]+)?)", metrics_line)
+    match = re.search(r"kernel_ms=([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)", metrics_line)
     return float(match.group(1)) if match else None
 
 

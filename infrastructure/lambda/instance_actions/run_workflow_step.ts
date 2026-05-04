@@ -382,19 +382,33 @@ async function finalize(input: WorkflowInput) {
   const ssmStatus = input.poll?.ssmStatus ?? 'Unknown'
   const responseCode = input.poll?.responseCode ?? -1
   const now = nowIso()
+  let terminalProgress: Record<string, any> | undefined
+  if (input.commandId) {
+    try {
+      const inv = await ssm.send(new GetCommandInvocationCommand({ CommandId: input.commandId, InstanceId: input.instanceId }))
+      terminalProgress = extractLatestProgress(inv.StandardOutputContent) ?? await extractLatestProgressFromLogs(input.commandId, input.instanceId)
+    } catch {}
+  }
+  const values: Record<string, any> = {
+    ':status': mapped,
+    ':reason': reasonFromSsm(mapped, ssmStatus, responseCode),
+    ':ssmStatus': ssmStatus,
+    ':responseCode': responseCode,
+    ':completedAt': now,
+    ':updatedAt': now,
+  }
+  let updateExpression = 'SET #status = :status, reason = :reason, ssmStatus = :ssmStatus, responseCode = :responseCode, completedAt = :completedAt, updatedAt = :updatedAt'
+  if (terminalProgress) {
+    updateExpression += ', progress = :progress'
+    values[':progress'] = terminalProgress
+  }
+  updateExpression += ' REMOVE #error'
   await ddb.send(new UpdateCommand({
     TableName: RUNS_TABLE_NAME,
     Key: { runId: input.runId },
-    UpdateExpression: 'SET #status = :status, reason = :reason, ssmStatus = :ssmStatus, responseCode = :responseCode, completedAt = :completedAt, updatedAt = :updatedAt REMOVE #error',
+    UpdateExpression: updateExpression,
     ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
-    ExpressionAttributeValues: {
-      ':status': mapped,
-      ':reason': reasonFromSsm(mapped, ssmStatus, responseCode),
-      ':ssmStatus': ssmStatus,
-      ':responseCode': responseCode,
-      ':completedAt': now,
-      ':updatedAt': now,
-    },
+    ExpressionAttributeValues: values,
   }))
   const performance = await attachPerformance(input.runId, input.s3Prefix)
   if (!performance) {
