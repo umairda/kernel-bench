@@ -8,7 +8,8 @@ The infrastructure layer is responsible for:
 
 - serving the frontend through CloudFront
 - exposing a single JSON-RPC API at `POST /api`
-- orchestrating CPU and GPU EC2 benchmark runners through SSM
+- orchestrating CPU and GPU EC2 benchmark runners through Step Functions and SSM
+- queueing runner work so CPU and GPU execute one run at a time
 - storing live run state and historical benchmark data in DynamoDB
 - storing source bundles and benchmark artifacts in S3
 
@@ -16,9 +17,11 @@ The infrastructure layer is responsible for:
 
 - JSON-RPC over HTTP: the backend intentionally exposes one route, `POST /api`, and dispatches methods in Lambda rather than mixing many REST-style paths.
 - Long-lived runner instances: CPU and GPU EC2 instances are provisioned once and started/stopped around work instead of launching a fresh instance for every run.
+- Per-runner queues: CPU and GPU each execute one run at a time while additional work waits in DynamoDB.
+- Step Functions workflow: startup, SSM dispatch, polling, finalization, and failure cleanup are coordinated by a state machine.
 - Dedicated history table: chart-friendly historical data is stored separately from live run state so UI queries stay simple.
 - Source bundles, not source-only uploads: uploads now include a manifest and can optionally embed prebuilt binaries.
-- Prepared GPU AMIs: the deploy pipeline can bake a GPU-ready AMI with CUDA/tooling, publish its ID to SSM, and redeploy the runner to use that image.
+- CUDA-ready GPU image: the GPU runner uses a CUDA-ready AWS image by default, or an explicit AMI override when supplied.
 
 ## High-Level Flow
 
@@ -28,9 +31,10 @@ Browser
       -> S3 frontend bucket
       -> API Gateway HTTP API
           -> Lambda JSON-RPC handler
-              -> DynamoDB runs table
+              -> DynamoDB runs table, runner locks, and queues
               -> DynamoDB history table
-              -> EC2 + SSM
+              -> Step Functions run workflow
+                  -> EC2 + SSM
               -> S3 artifact bucket
 ```
 
@@ -41,12 +45,15 @@ The dispatcher lives in [rpc_handler.ts](/Users/umairansari/projects/gpu-compute
 Current methods:
 
 - `startRun`
+- `deleteQueuedRun`
+- `reorderQueuedRuns`
 - `getRunStatus`
 - `listInProgressRuns`
 - `getInstanceStates`
 - `historyVector`
 - `historyMatmul`
 - `historyConvolution`
+- `runHistory`
 
 The supporting Lambda modules live under [lambda](/Users/umairansari/projects/gpu-compute-framework/infrastructure/lambda).
 
@@ -57,12 +64,19 @@ The supporting Lambda modules live under [lambda](/Users/umairansari/projects/gp
 Purpose:
 
 - live orchestration state
-- lock and progress tracking
+- per-runner queue state
+- runner lock records
+- startup and benchmark progress tracking
 - run status polling
 
 Primary key:
 
 - `runId`
+
+Special lock records:
+
+- `RUNNER_LOCK#cpu`
+- `RUNNER_LOCK#gpu`
 
 ### History Table
 
@@ -88,7 +102,7 @@ Primary key:
 - default instance type: `g6e.xlarge`
 - either:
   - default Amazon-owned Deep Learning Base AMI with Single CUDA on Ubuntu 24.04
-  - or a prepared custom AMI when `KERNELBENCH_GPU_AMI_ID` / `gpuAmiId` is supplied
+  - or an explicit AMI override when `KERNELBENCH_GPU_AMI_ID` / `gpuAmiId` is supplied
 
 ### Why Both Still Use Source Bundles
 
@@ -115,21 +129,11 @@ For GPU runs, the remote runner performs one tiny CUDA warmup command before tim
 
 ## GPU AMI Strategy
 
-[prepare_gpu_ami.sh](/Users/umairansari/projects/gpu-compute-framework/infrastructure/scripts/prepare_gpu_ami.sh) is the bootstrap script used when baking a prepared GPU AMI.
+The current default strategy is to use a CUDA-ready AWS image and keep benchmark source changes in the source bundle.
 
-The deploy workflow can:
+If `KERNELBENCH_GPU_AMI_ID` / `gpuAmiId` is provided, the stack uses that image for the GPU runner. If not, CDK looks up the default AWS image configured in [gpu-benchmark-stack.ts](/Users/umairansari/projects/gpu-compute-framework/infrastructure/lib/gpu-benchmark-stack.ts).
 
-- detect AMI-affecting changes
-- launch a temporary GPU AMI builder instance
-- install drivers, CUDA, and build tooling
-- validate `nvidia-smi`, `nvcc`, and `cmake`
-- create an AMI
-- publish the AMI ID to SSM
-- deploy the stack so the GPU runner instance is replaced with the latest baked image
-
-Default SSM parameter:
-
-- `/kernelbench/gpu/latest-ami-id`
+[prepare_gpu_ami.sh](/Users/umairansari/projects/gpu-compute-framework/infrastructure/scripts/prepare_gpu_ami.sh) still exists as an operational helper, but the default GitHub deploy workflow no longer bakes a custom GPU AMI.
 
 ## Security Model
 
@@ -149,6 +153,12 @@ Default SSM parameter:
   JSON-RPC helpers, error envelopes, and origin verification.
 - `lambda/rpc_handler.ts`
   Method dispatch surface.
+- `lambda/run_queue.ts`
+  Per-runner queue dispatch, runner locks, and idle-stop coordination.
+- `lambda/benchmark_registry.ts`
+  Benchmark validation, S3 key generation, and timeout estimation.
+- `lambda/instance_actions/run_workflow_step.ts`
+  Step Functions task implementation for startup, dispatch, polling, finalization, and failure handling.
 - `lambda/history.ts`
   History table normalization and query logic.
 - `scripts/upload-source.sh`
@@ -158,7 +168,7 @@ Default SSM parameter:
 - `scripts/remote_kernel_benchmark.sh`
   On-instance benchmark execution.
 - `scripts/prepare_gpu_ami.sh`
-  AMI bake bootstrap.
+  Optional AMI preparation helper, not part of the default deploy workflow.
 
 ## Commands
 
@@ -224,5 +234,5 @@ Manual frontend upload:
 ## Notes
 
 - The CDK app still emits a DynamoDB `pointInTimeRecovery` deprecation warning during synth.
-- The GPU bake workflow only runs for environment/toolchain-affecting changes, not every `.cpp` edit.
-- Existing runner-local caches are lost when the EC2 instance is replaced during AMI roll-forward.
+- The default deploy workflow uses the configured CUDA-ready GPU image instead of baking a custom AMI.
+- Existing runner-local caches are lost when the EC2 instance is replaced.

@@ -4,9 +4,10 @@ This directory contains the Vite + React + TypeScript single-page app for Kernel
 
 ## Purpose
 
-The frontend has two jobs:
+The frontend has three jobs:
 
 - launch and monitor live benchmark runs
+- manage queued CPU/GPU work
 - visualize historical CPU and GPU results on shared charts
 
 It talks only to the backend JSON-RPC endpoint at `POST /api`.
@@ -15,16 +16,17 @@ It talks only to the backend JSON-RPC endpoint at `POST /api`.
 
 - Single-page app behind CloudFront: the frontend is deployed as static assets to S3 and served through CloudFront.
 - JSON-RPC instead of path-based REST: the app sends `jsonrpc: "2.0"` requests with method names like `startRun` and `historyVector`.
-- Top-level product tabs: the UI is split into `Run` and `Historical`.
-- Benchmark tabs inside `Run`: vector, matrix multiplication, and convolution are tabbed instead of collapsible.
-- Lazy historical bundle: charting code lives in `HistoricalView.tsx` and is loaded only when the `Historical` tab is opened.
+- Top-level product tabs: the UI is split into `Benchmark`, `Performance`, and `History`.
+- Benchmark tabs inside `Benchmark`: vector, matrix multiplication, and convolution are tabbed instead of collapsible.
+- Queue management: queued runs can be viewed, deleted, and reordered before dispatch.
+- Lazy performance/history bundles: charting and run-history code are loaded only when those tabs are opened.
 - Shared CPU/GPU charts: the historical view overlays CPU and GPU data on the same axes for direct comparison.
 
 ## Current UI Model
 
-### Run Tab
+### Benchmark Tab
 
-The `Run` tab contains benchmark-specific forms for:
+The `Benchmark` tab contains benchmark-specific forms for:
 
 - vector
 - matrix multiplication
@@ -32,18 +34,24 @@ The `Run` tab contains benchmark-specific forms for:
 
 Each section:
 
-- launches paired CPU and GPU runs
+- launches CPU and GPU runs for side-by-side comparison
 - shows current instance state badges next to result headings
-- disables run actions when the instance state blocks execution
+- queues work when the selected runner is already busy
 - polls live run status until completion
 
-### Historical Tab
+It also shows a queued-runs card backed by `listInProgressRuns`, `deleteQueuedRun`, and `reorderQueuedRuns`.
 
-The `Historical` tab shows charted run history backed by DynamoDB history records.
+### Performance Tab
+
+The `Performance` tab shows charted run history backed by DynamoDB history records.
 
 - Vector: scatter chart with `N` on the X axis and operation duration in `ms` on the Y axis.
 - Matrix multiplication: square-only history (`inputRows = inputCols = outputCols`) with size on X and duration in `ms` on Y.
 - Convolution: shared CPU/GPU historical chart using normalized convolution dimensions already returned by the backend.
+
+### History Tab
+
+The `History` tab shows a sortable table of completed and failed runs returned by `runHistory`.
 
 ## API Integration
 
@@ -52,12 +60,15 @@ Main client module: [api.ts](/Users/umairansari/projects/gpu-compute-framework/f
 Implemented JSON-RPC methods:
 
 - `startRun`
+- `deleteQueuedRun`
+- `reorderQueuedRuns`
 - `getRunStatus`
 - `listInProgressRuns`
 - `getInstanceStates`
 - `historyVector`
 - `historyMatmul`
 - `historyConvolution`
+- `runHistory`
 
 If `VITE_API_BASE_URL` is unset, the frontend calls relative `/api` on the current origin. For local development against the deployed backend, set:
 
@@ -68,9 +79,13 @@ VITE_API_BASE_URL=https://<cloudfront-domain>
 ## Layout
 
 - `src/App.tsx`
-  Top-level app shell, theme toggle, `Run | Historical` tabs, and live run orchestration.
+  Top-level app shell, theme toggle, `Benchmark | Performance | History` tabs, and live run orchestration.
 - `src/HistoricalView.tsx`
-  Lazy-loaded historical charts and filters.
+  Lazy-loaded performance charts and filters.
+- `src/RunHistoryView.tsx`
+  Lazy-loaded sortable table of terminal runs.
+- `src/benchmarks/benchmarkRegistry.ts`
+  Frontend benchmark labels, tabs, keys, and parameter formatting.
 - `src/lib/api.ts`
   JSON-RPC client, React Query hooks, and response types.
 - `src/components/`
@@ -132,5 +147,5 @@ The directory includes focused component tests such as:
 ## Notes
 
 - Historical charting uses `Recharts`.
-- The historical code path is intentionally split out to reduce the initial JS bundle size for the default `Run` experience.
+- The performance and history code paths are intentionally split out to reduce the initial JS bundle size for the default `Benchmark` experience.
 - The frontend does not implement user auth; backend access control currently relies on origin verification and infrastructure boundaries.
