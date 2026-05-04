@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
-import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader2, RotateCcw } from 'lucide-react'
 import { benchmarkLabel, formatBenchmarkParams } from './benchmarks/benchmarkRegistry'
 import { GlowCard } from './components/aceternity/glow-card'
-import { type RunHistoryRow, useGetRunHistoryQuery } from './lib/api'
+import { type RunHistoryRow, useGetRunHistoryQuery, useStartRunMutation } from './lib/api'
 
 type SortKey = 'runId' | 'createdAt' | 'runner' | 'operation' | 'parameters' | 'result' | 'duration'
 type SortDirection = 'asc' | 'desc'
@@ -63,8 +63,11 @@ function compareValues(a: string | number, b: string | number, direction: SortDi
 
 export default function RunHistoryView() {
   const runHistory = useGetRunHistoryQuery()
+  const retryRun = useStartRunMutation()
   const [sortKey, setSortKey] = useState<SortKey>('createdAt')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [copiedRunId, setCopiedRunId] = useState<string | null>(null)
+  const [retryingRunId, setRetryingRunId] = useState<string | null>(null)
 
   const rows = useMemo(() => {
     const items = [...(runHistory.data?.items ?? [])]
@@ -104,6 +107,29 @@ export default function RunHistoryView() {
   const renderSortIcon = (key: SortKey) => {
     if (sortKey !== key) return null
     return sortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+  }
+
+  const copyRunId = async (runId: string) => {
+    try {
+      await navigator.clipboard?.writeText(runId)
+      setCopiedRunId(runId)
+      window.setTimeout(() => setCopiedRunId((current) => current === runId ? null : current), 1500)
+    } catch {
+      setCopiedRunId(null)
+    }
+  }
+
+  const retryFailedRun = async (run: RunHistoryRow) => {
+    setRetryingRunId(run.runId)
+    try {
+      await retryRun.mutateAsync({
+        runner: run.runner,
+        benchmark: run.benchmark,
+        params: run.params,
+      })
+    } finally {
+      setRetryingRunId(null)
+    }
   }
 
   return (
@@ -162,16 +188,42 @@ export default function RunHistoryView() {
             <tbody className="divide-y divide-zinc-200 dark:divide-white/5">
               {rows.map((row) => (
                 <tr key={row.runId} className="align-top">
-                  <td className="px-3 py-3 font-mono text-xs text-zinc-800 dark:text-zinc-100">{row.runId}</td>
+                  <td className="px-3 py-3 font-mono text-xs text-zinc-800 dark:text-zinc-100">
+                    <button
+                      type="button"
+                      onClick={() => void copyRunId(row.runId)}
+                      className="break-all text-left underline decoration-transparent underline-offset-2 transition hover:text-cyan-700 hover:decoration-cyan-500 dark:hover:text-cyan-300"
+                      title="Copy run ID"
+                    >
+                      {row.runId}
+                    </button>
+                    {copiedRunId === row.runId ? (
+                      <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide text-cyan-700 dark:text-cyan-300">Copied</span>
+                    ) : null}
+                  </td>
                   <td className="px-3 py-3 text-xs text-zinc-700 dark:text-zinc-200">{formatCreatedAt(row.createdAt)}</td>
                   <td className="px-3 py-3 uppercase text-zinc-700 dark:text-zinc-200">{row.runner}</td>
                   <td className="px-3 py-3 text-zinc-700 dark:text-zinc-200">{benchmarkLabel(row.benchmark)}</td>
                   <td className="px-3 py-3 font-mono text-xs text-zinc-600 dark:text-zinc-300 break-words whitespace-normal">{formatParams(row)}</td>
                   <td className="px-3 py-3 text-zinc-700 dark:text-zinc-200">{formatDuration(totalOperationDuration(row))}</td>
                   <td className="px-3 py-3">
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-rose-500/10 text-rose-700 dark:text-rose-300'}`}>
-                      {resultLabel(row.status)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-rose-500/10 text-rose-700 dark:text-rose-300'}`}>
+                        {resultLabel(row.status)}
+                      </span>
+                      {row.status === 'FAILED' ? (
+                        <button
+                          type="button"
+                          aria-label={`Retry ${row.runId}`}
+                          title="Retry failed run"
+                          disabled={retryRun.isPending}
+                          onClick={() => void retryFailedRun(row)}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-600 transition hover:border-cyan-400 hover:text-cyan-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-cyan-400/60 dark:hover:text-cyan-200"
+                        >
+                          {retryRun.isPending && retryingRunId === row.runId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}
