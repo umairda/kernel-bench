@@ -116,6 +116,23 @@ describe('RunStatusCard', () => {
     expect(onRetry).toHaveBeenCalledWith(run)
   })
 
+  it('shows a retry button for cancelled runs', () => {
+    const onRetry = vi.fn()
+    const run = {
+      runId: 'run-cancelled-retry',
+      status: 'CANCELLED' as const,
+      benchmark: 'vector' as const,
+      runner: 'cpu' as const,
+      params: { vectorLength: 100000 },
+    }
+
+    render(<RunStatusCard title="CPU" instanceState="stopped" run={run} onRetry={onRetry} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /retry cpu run/i }))
+
+    expect(onRetry).toHaveBeenCalledWith(run)
+  })
+
   it('does not show a retry button for completed runs', () => {
     render(
       <RunStatusCard

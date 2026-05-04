@@ -152,7 +152,7 @@ export function RunStatusCard({
     : null
   const performance = run?.performance ?? (run ? fallbackPerformance(run) : undefined)
   const phaseDurations = performance?.phaseDurationsMs as NonNullable<NonNullable<RunRecord['performance']>['phaseDurationsMs']> | undefined
-  const canRetry = run?.status === 'FAILED' && Boolean(onRetry)
+  const canRetry = (run?.status === 'FAILED' || run?.status === 'CANCELLED') && Boolean(onRetry)
 
   return (
     <GlowCard className="h-full">
