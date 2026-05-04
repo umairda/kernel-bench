@@ -1,5 +1,5 @@
 import { type ReactNode, useMemo, useState } from 'react'
-import { CartesianGrid, Legend, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from 'recharts'
+import { ResponsiveScatterPlot } from '@nivo/scatterplot'
 import { Loader2 } from 'lucide-react'
 import { SegmentedControl } from './components/SegmentedControl'
 import { GlowCard } from './components/aceternity/glow-card'
@@ -14,10 +14,7 @@ import {
 } from './lib/api'
 
 type HistoryRunnerFilter = Runner | 'all'
-type ChartPoint = { x: number; y: number }
-type TooltipPayloadItem = {
-  dataKey?: unknown
-}
+type ChartPoint = { x: number; y: number; runId?: string; label?: string }
 type ConvolutionScatterPoint = ChartPoint & {
   runId: string
   runner: Runner
@@ -35,6 +32,11 @@ type HeatmapCell = {
   filterOutC: number
   cpuMs: number | null
   gpuMs: number | null
+}
+type ScatterSeries = {
+  name: string
+  color: string
+  data: ChartPoint[]
 }
 
 function formatInteger(value: number) {
@@ -54,29 +56,21 @@ function formatMilliseconds(value?: number | null) {
   return `${Math.round(value).toLocaleString()} ms`
 }
 
-function formatTooltipMilliseconds(value: unknown) {
-  return formatMilliseconds(typeof value === 'number' ? value : Number(value))
-}
-
-function formatTooltipValue(value: unknown, name: unknown, item: TooltipPayloadItem) {
-  if (item.dataKey === 'x') {
-    return [formatInteger(Number(value)), String(name)] as [string, string]
+function buildPowerOfTenAxis(values: number[], maxTicks = 8) {
+  const positive = values.filter((value) => Number.isFinite(value) && value > 0)
+  if (positive.length === 0) {
+    return { ticks: [1, 10], min: 1, max: 10 }
   }
-  return [formatTooltipMilliseconds(value), String(name)] as [string, string]
-}
 
-function formatConvolutionTooltipValue(value: unknown, name: unknown, item: TooltipPayloadItem) {
-  if (item.dataKey === 'x') {
-    return [formatInteger(Number(value)), 'Input area'] as [string, string]
+  const minPower = Math.floor(Math.log10(Math.min(...positive)))
+  const maxPower = Math.ceil(Math.log10(Math.max(...positive)))
+  const ticks: number[] = []
+  for (let power = minPower; power <= maxPower; power += 1) {
+    ticks.push(10 ** power)
   }
-  return [formatTooltipMilliseconds(value), String(name)] as [string, string]
-}
 
-function buildXAxisTicks(series: ChartPoint[][], maxTicks = 8) {
-  const ticks = [...new Set(series.flat().map((point) => point.x).filter((value) => Number.isFinite(value) && value > 0))]
-    .sort((a, b) => a - b)
   if (ticks.length <= maxTicks) {
-    return ticks
+    return { ticks, min: ticks[0], max: ticks[ticks.length - 1] }
   }
 
   const selected = new Set<number>()
@@ -84,7 +78,36 @@ function buildXAxisTicks(series: ChartPoint[][], maxTicks = 8) {
     const index = Math.round((i * (ticks.length - 1)) / (maxTicks - 1))
     selected.add(ticks[index])
   }
-  return [...selected].sort((a, b) => a - b)
+  const sampledTicks = [...selected].sort((a, b) => a - b)
+  return { ticks: sampledTicks, min: ticks[0], max: ticks[ticks.length - 1] }
+}
+
+export function buildLogGridTicks(min: number, max: number, multipliers = [1, 2, 4, 6, 8]) {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max <= 0) {
+    return []
+  }
+
+  const minPower = Math.floor(Math.log10(min))
+  const maxPower = Math.ceil(Math.log10(max))
+  const ticks: number[] = []
+  for (let power = minPower; power <= maxPower; power += 1) {
+    const base = 10 ** power
+    for (const multiplier of multipliers) {
+      const value = multiplier * base
+      if (value >= min && value <= max) {
+        ticks.push(value)
+      }
+    }
+  }
+  return [...new Set(ticks)].sort((a, b) => a - b)
+}
+
+export function buildXAxisTicks(series: ChartPoint[][], maxTicks = 8) {
+  return buildPowerOfTenAxis(series.flat().map((point) => point.x), maxTicks).ticks
+}
+
+export function buildYAxisTicks(series: ChartPoint[][], maxTicks = 6) {
+  return buildPowerOfTenAxis(series.flat().map((point) => point.y), maxTicks).ticks
 }
 
 function ChartPanel({
@@ -121,12 +144,93 @@ function ChartPanel({
   )
 }
 
-function ChartFrame({ className = 'h-80', children }: { className?: string; children: ReactNode }) {
+function NivoScatterChart({
+  series,
+  xTicks,
+  xLabel,
+  xTooltipLabel,
+  className = 'h-80',
+}: {
+  series: ScatterSeries[]
+  xTicks: number[]
+  xLabel: string
+  xTooltipLabel: string
+  className?: string
+}) {
+  const xAxis = buildPowerOfTenAxis(series.flatMap((item) => item.data.map((point) => point.x)))
+  const yAxis = buildPowerOfTenAxis(series.flatMap((item) => item.data.map((point) => point.y)), 6)
+  const yTicks = yAxis.ticks
+  const safeXTicks = xTicks.length > 0 ? xTicks : xAxis.ticks
+  const colorMap = Object.fromEntries(series.map((item) => [item.name, item.color]))
+  const data = series.map((item) => ({
+    id: item.name,
+    data: item.data,
+  }))
+
   return (
     <div className={`${className} min-h-72 min-w-0 overflow-hidden`}>
-      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240} debounce={50}>
-        {children}
-      </ResponsiveContainer>
+      <div className="h-full min-h-72 w-full min-w-0">
+        <ResponsiveScatterPlot<ChartPoint>
+          data={data}
+          margin={{ top: 20, right: 132, bottom: 68, left: 72 }}
+          xScale={{ type: 'log', base: 10, min: xAxis.min, max: xAxis.max }}
+          yScale={{ type: 'log', base: 10, min: yAxis.min, max: yAxis.max }}
+          axisBottom={{
+            legend: xLabel,
+            legendOffset: 48,
+            legendPosition: 'middle',
+            tickValues: safeXTicks,
+            format: (value) => formatInteger(Number(value)),
+          }}
+          axisLeft={{
+            legend: 'ms',
+            legendOffset: -52,
+            legendPosition: 'middle',
+            tickValues: yTicks,
+            format: (value) => Math.round(Number(value)).toLocaleString(),
+          }}
+          gridXValues={safeXTicks}
+          gridYValues={yTicks}
+          colors={(item) => colorMap[String(item.serieId)] ?? '#0891b2'}
+          nodeSize={9}
+          useMesh
+          animate={false}
+          theme={{
+            text: { fill: 'currentColor', fontSize: 11 },
+            axis: {
+              ticks: { text: { fill: 'currentColor', fontSize: 10 } },
+              legend: { text: { fill: 'currentColor', fontSize: 11, fontWeight: 700 } },
+            },
+            grid: { line: { stroke: 'currentColor', strokeOpacity: 0.16, strokeDasharray: '3 3' } },
+            legends: { text: { fill: 'currentColor', fontSize: 11 } },
+            tooltip: {
+              container: {
+                background: '#09090b',
+                color: '#f4f4f5',
+                borderRadius: 12,
+                boxShadow: '0 16px 40px rgba(0,0,0,0.28)',
+                fontSize: 12,
+              },
+            },
+          }}
+          tooltip={({ node }) => (
+            <div className="min-w-56 max-w-72 space-y-1.5 rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-xs text-zinc-100 shadow-xl">
+              <p className="font-semibold" style={{ color: node.color }}>{node.serieId}</p>
+              <p>{xTooltipLabel}: {formatInteger(Number(node.data.x))}</p>
+              <p>Duration: {formatMilliseconds(Number(node.data.y))}</p>
+              {node.data.label ? <p>{node.data.label}</p> : null}
+            </div>
+          )}
+          legends={[{
+            anchor: 'right',
+            direction: 'column',
+            translateX: 116,
+            itemWidth: 104,
+            itemHeight: 16,
+            symbolSize: 9,
+          }]}
+        />
+      </div>
     </div>
   )
 }
@@ -340,39 +444,21 @@ export default function HistoricalView({
           vectorGpuDivide.length === 0
         }
       >
-        <ChartFrame>
-          <ScatterChart margin={{ top: 16, right: 24, bottom: 16, left: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(161,161,170,0.35)" />
-            <XAxis
-              type="number"
-              dataKey="x"
-              scale="log"
-              domain={['auto', 'auto']}
-              name="Vector Length"
-              ticks={vectorXTicks}
-              tickFormatter={(value) => formatInteger(Number(value))}
-            />
-            <YAxis
-              type="number"
-              dataKey="y"
-              scale="log"
-              domain={['auto', 'auto']}
-              name="Duration (ms)"
-              tickFormatter={(value) => `${Math.round(Number(value))}`}
-              label={{ value: 'ms', angle: -90, position: 'insideLeft' }}
-            />
-            <Tooltip formatter={formatTooltipValue} labelFormatter={(value) => `N=${formatInteger(Number(value))}`} />
-            <Legend />
-            <Scatter name="CPU Add" data={vectorCpuAdd} fill="#991b1b" />
-            <Scatter name="GPU Add" data={vectorGpuAdd} fill="#facc15" />
-            <Scatter name="CPU Subtract" data={vectorCpuSubtract} fill="#b91c1c" />
-            <Scatter name="GPU Subtract" data={vectorGpuSubtract} fill="#fde047" />
-            <Scatter name="CPU Multiply" data={vectorCpuMultiply} fill="#dc2626" />
-            <Scatter name="GPU Multiply" data={vectorGpuMultiply} fill="#f59e0b" />
-            <Scatter name="CPU Divide" data={vectorCpuDivide} fill="#ef4444" />
-            <Scatter name="GPU Divide" data={vectorGpuDivide} fill="#fef08a" />
-          </ScatterChart>
-        </ChartFrame>
+        <NivoScatterChart
+          xLabel="Vector Length"
+          xTooltipLabel="N"
+          xTicks={vectorXTicks}
+          series={[
+            { name: 'CPU Add', data: vectorCpuAdd, color: '#991b1b' },
+            { name: 'CPU Subtract', data: vectorCpuSubtract, color: '#b91c1c' },
+            { name: 'CPU Multiply', data: vectorCpuMultiply, color: '#dc2626' },
+            { name: 'CPU Divide', data: vectorCpuDivide, color: '#ef4444' },
+            { name: 'GPU Add', data: vectorGpuAdd, color: '#facc15' },
+            { name: 'GPU Subtract', data: vectorGpuSubtract, color: '#fde047' },
+            { name: 'GPU Multiply', data: vectorGpuMultiply, color: '#f59e0b' },
+            { name: 'GPU Divide', data: vectorGpuDivide, color: '#fef08a' },
+          ]}
+        />
       </ChartPanel>
 
       <ChartPanel
@@ -381,33 +467,15 @@ export default function HistoricalView({
         loading={matmulHistory.isPending}
         empty={matmulCpuPoints.length === 0 && matmulGpuPoints.length === 0}
       >
-        <ChartFrame>
-          <ScatterChart margin={{ top: 16, right: 24, bottom: 16, left: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(161,161,170,0.35)" />
-            <XAxis
-              type="number"
-              dataKey="x"
-              scale="log"
-              domain={['auto', 'auto']}
-              name="Matrix Size"
-              ticks={matmulXTicks}
-              tickFormatter={(value) => formatInteger(Number(value))}
-            />
-            <YAxis
-              type="number"
-              dataKey="y"
-              scale="log"
-              domain={['auto', 'auto']}
-              name="Duration (ms)"
-              tickFormatter={(value) => `${Math.round(Number(value))}`}
-              label={{ value: 'ms', angle: -90, position: 'insideLeft' }}
-            />
-            <Tooltip formatter={formatTooltipValue} labelFormatter={(value) => `Size=${formatInteger(Number(value))}`} />
-            <Legend />
-            <Scatter name="CPU Matmul" data={matmulCpuPoints} fill="#7c3aed" />
-            <Scatter name="GPU Matmul" data={matmulGpuPoints} fill="#c4b5fd" />
-          </ScatterChart>
-        </ChartFrame>
+        <NivoScatterChart
+          xLabel="Matrix Size"
+          xTooltipLabel="Size"
+          xTicks={matmulXTicks}
+          series={[
+            { name: 'CPU Matmul', data: matmulCpuPoints, color: '#7c3aed' },
+            { name: 'GPU Matmul', data: matmulGpuPoints, color: '#c4b5fd' },
+          ]}
+        />
       </ChartPanel>
 
       <ChartPanel
@@ -417,33 +485,15 @@ export default function HistoricalView({
         empty={convolutionCpuPoints.length === 0 && convolutionGpuPoints.length === 0}
       >
         <div className="space-y-4">
-          <ChartFrame>
-            <ScatterChart margin={{ top: 16, right: 24, bottom: 16, left: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(161,161,170,0.35)" />
-              <XAxis
-                type="number"
-                dataKey="x"
-                scale="log"
-                domain={['auto', 'auto']}
-                name="Input Area"
-                ticks={convolutionXTicks}
-                tickFormatter={(value) => formatInteger(Number(value))}
-              />
-              <YAxis
-                type="number"
-                dataKey="y"
-                scale="log"
-                domain={['auto', 'auto']}
-                name="Duration (ms)"
-                tickFormatter={(value) => `${Math.round(Number(value))}`}
-                label={{ value: 'ms', angle: -90, position: 'insideLeft' }}
-              />
-              <Tooltip formatter={formatTooltipValue} labelFormatter={(value) => `Input area=${formatInteger(Number(value))}`} />
-              <Legend />
-              <Scatter name="CPU Convolution" data={convolutionCpuPoints} fill="#db2777" />
-              <Scatter name="GPU Convolution" data={convolutionGpuPoints} fill="#f9a8d4" />
-            </ScatterChart>
-          </ChartFrame>
+          <NivoScatterChart
+            xLabel="Input Area"
+            xTooltipLabel="Input area"
+            xTicks={convolutionXTicks}
+            series={[
+              { name: 'CPU Convolution', data: convolutionCpuPoints, color: '#db2777' },
+              { name: 'GPU Convolution', data: convolutionGpuPoints, color: '#f9a8d4' },
+            ]}
+          />
           <div className="rounded-xl border border-zinc-300 bg-zinc-100 p-4 text-sm text-zinc-700 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-300">
             <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
               <div>
@@ -484,33 +534,16 @@ export default function HistoricalView({
                 No convolution runs match these filters.
               </div>
             ) : (
-              <ChartFrame className="mt-4 h-72">
-                <ScatterChart margin={{ top: 16, right: 24, bottom: 16, left: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(161,161,170,0.35)" />
-                  <XAxis
-                    type="number"
-                    dataKey="x"
-                    scale="log"
-                    domain={['auto', 'auto']}
-                    name="Input Area"
-                    ticks={filteredConvolutionXTicks}
-                    tickFormatter={(value) => formatInteger(Number(value))}
-                  />
-                  <YAxis
-                    type="number"
-                    dataKey="y"
-                    scale="log"
-                    domain={['auto', 'auto']}
-                    name="Duration (ms)"
-                    tickFormatter={(value) => `${Math.round(Number(value))}`}
-                    label={{ value: 'ms', angle: -90, position: 'insideLeft' }}
-                  />
-                  <Tooltip formatter={formatConvolutionTooltipValue} labelFormatter={(value) => `Input area=${formatInteger(Number(value))}`} />
-                  <Legend />
-                  <Scatter name="CPU Filtered Convolution" data={filteredConvolutionCpuPoints} fill="#be123c" />
-                  <Scatter name="GPU Filtered Convolution" data={filteredConvolutionGpuPoints} fill="#f59e0b" />
-                </ScatterChart>
-              </ChartFrame>
+              <NivoScatterChart
+                className="mt-4 h-72"
+                xLabel="Input Area"
+                xTooltipLabel="Input area"
+                xTicks={filteredConvolutionXTicks}
+                series={[
+                  { name: 'CPU Filtered Convolution', data: filteredConvolutionCpuPoints, color: '#be123c' },
+                  { name: 'GPU Filtered Convolution', data: filteredConvolutionGpuPoints, color: '#f59e0b' },
+                ]}
+              />
             )}
           </div>
 

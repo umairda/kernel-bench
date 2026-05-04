@@ -4,11 +4,29 @@ import {
   buildConvolutionSeries,
   buildDimensionOptions,
   buildFilteredConvolutionSeries,
+  buildLogGridTicks,
   buildMatmulSeries,
   buildVectorSeries,
+  buildXAxisTicks,
+  buildYAxisTicks,
 } from './HistoricalView'
 
 describe('HistoricalView series builders', () => {
+  it('builds standard power-of-ten log-scale axis ticks', () => {
+    const points = [[
+      { x: 8192, y: 4 },
+      { x: 16384, y: 1250 },
+      { x: 100000, y: 65000 },
+    ]]
+
+    expect(buildXAxisTicks(points)).toEqual([1000, 10000, 100000])
+    expect(buildYAxisTicks(points)).toEqual([1, 10, 100, 1000, 10000, 100000])
+  })
+
+  it('builds unlabeled minor log grid ticks between labeled powers', () => {
+    expect(buildLogGridTicks(100, 1000)).toEqual([100, 200, 400, 600, 800, 1000])
+  })
+
   it('filters non-positive values before log-scale vector charts', () => {
     const series = buildVectorSeries([
       { runId: 'zero', runner: 'cpu', vectorLength: 100, addMs: 0, subtractMs: null, multiplyMs: null, divideMs: null, totalDurationMs: null },
