@@ -29,6 +29,11 @@ type Theme = 'light' | 'dark'
 type AppTab = 'run' | 'performance' | 'history'
 const HistoricalView = lazy(() => import('./HistoricalView'))
 const RunHistoryView = lazy(() => import('./RunHistoryView'))
+const APP_TAB_PATHS: Record<AppTab, string> = {
+  run: '/benchmark',
+  performance: '/performance',
+  history: '/history',
+}
 
 const initialCompareState: CompareRunState = {
   cpuRunId: null,
@@ -159,6 +164,22 @@ function formatBuildDate(value: string) {
   ].join('-') + ` ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
 
+function normalizePathname(pathname: string) {
+  if (!pathname || pathname === '/') {
+    return '/'
+  }
+  return pathname.endsWith('/') ? pathname.slice(0, -1) : pathname
+}
+
+export function pathnameForTab(tab: AppTab) {
+  return APP_TAB_PATHS[tab]
+}
+
+export function tabFromPathname(pathname: string): AppTab | undefined {
+  const normalized = normalizePathname(pathname)
+  return (Object.entries(APP_TAB_PATHS).find(([, path]) => path === normalized)?.[0] as AppTab | undefined)
+}
+
 function App() {
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem('kernelbench-theme')
@@ -167,10 +188,11 @@ function App() {
     }
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   })
-  const [appTab, setAppTab] = useState<AppTab>('run')
+  const [appTab, setAppTab] = useState<AppTab>(() => tabFromPathname(window.location.pathname) ?? 'run')
   const [activeRunTab, setActiveRunTab] = useState<BenchmarkTab>('vector')
   const [hasHydratedInitialRunTab, setHasHydratedInitialRunTab] = useState(false)
   const lastFocusedActiveRunKey = useRef<string | null>(null)
+  const hasSyncedAppTabPath = useRef(false)
   const [historyRunner, setHistoryRunner] = useState<Runner | 'all'>('all')
 
   const [vectorRuns, setVectorRuns] = useState<CompareRunState>(initialCompareState)
@@ -290,6 +312,33 @@ function App() {
     document.documentElement.classList.toggle('dark', theme === 'dark')
     localStorage.setItem('kernelbench-theme', theme)
   }, [theme])
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setAppTab(tabFromPathname(window.location.pathname) ?? 'run')
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  useEffect(() => {
+    const nextPath = pathnameForTab(appTab)
+    const currentPath = normalizePathname(window.location.pathname)
+
+    if (currentPath === nextPath) {
+      hasSyncedAppTabPath.current = true
+      return
+    }
+
+    if (!hasSyncedAppTabPath.current) {
+      window.history.replaceState(window.history.state, '', nextPath)
+      hasSyncedAppTabPath.current = true
+      return
+    }
+
+    window.history.pushState(window.history.state, '', nextPath)
+  }, [appTab])
 
   const isAnyExecuting = useMemo(() => {
     return (
