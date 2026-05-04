@@ -27,6 +27,9 @@ function formatDuration(value: number) {
   if (!Number.isFinite(value)) {
     return 'n/a'
   }
+  if (value > 60000) {
+    return `${(value / 60000).toFixed(1)}min`
+  }
   if (value > 1000) {
     return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)} s`
   }

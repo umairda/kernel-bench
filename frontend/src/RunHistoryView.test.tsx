@@ -58,7 +58,7 @@ describe('RunHistoryView', () => {
         runner: 'gpu',
         params: { inputRows: 64, inputCols: 64, outputCols: 64 },
         performance: {
-          operationDurations: [{ name: 'matmul', durationMs: 1200 }],
+          operationDurations: [{ name: 'matmul', durationMs: 65000 }],
         },
       }),
       makeRun({
@@ -87,7 +87,7 @@ describe('RunHistoryView', () => {
     expect(within(secondBodyRow).getByText('run-older')).toBeInTheDocument()
     expect(screen.getByText('Matrix Multiplication')).toBeInTheDocument()
     expect(screen.getByText('600 ms')).toBeInTheDocument()
-    expect(screen.getByText('1.2 s')).toBeInTheDocument()
+    expect(screen.getByText('1.1min')).toBeInTheDocument()
     expect(screen.getByText('Failed')).toBeInTheDocument()
     expect(screen.getByText('Success')).toBeInTheDocument()
     expect(screen.getByText('{"vectorLength":128}')).toBeInTheDocument()

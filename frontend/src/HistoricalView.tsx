@@ -48,6 +48,9 @@ function formatMilliseconds(value?: number | null) {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return 'n/a'
   }
+  if (value > 60000) {
+    return `${(value / 60000).toFixed(1)}min`
+  }
   return `${Math.round(value).toLocaleString()} ms`
 }
 
