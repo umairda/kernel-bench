@@ -48,6 +48,10 @@ function isTerminalRun(run: RunRecord) {
   return run.status === 'COMPLETED' || run.status === 'FAILED' || run.status === 'CANCELLED'
 }
 
+function isActiveRun(run: RunRecord) {
+  return run.status === 'STARTING' || run.status === 'RUNNING'
+}
+
 function formatDateTime(value?: string) {
   if (!value) {
     return 'n/a'
@@ -196,6 +200,71 @@ function SortableQueuedRun({
   )
 }
 
+function ActiveRunRow({ run, isOpen, onToggle }: { run: RunRecord; isOpen: boolean; onToggle: (runId: string) => void }) {
+  return (
+    <div className="rounded-xl border border-emerald-300 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-950/20">
+      <div className="flex flex-col gap-3 p-3 md:flex-row md:items-center md:justify-between">
+        <button
+          type="button"
+          onClick={() => onToggle(run.runId)}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          aria-expanded={isOpen}
+        >
+          <ChevronDown className={`h-4 w-4 shrink-0 text-emerald-700 transition-transform dark:text-emerald-300 ${isOpen ? 'rotate-180' : ''}`} />
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              Active: {run.runner.toUpperCase()} {benchmarkLabel(run.benchmark)}
+            </span>
+            <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">
+              {formatBenchmarkParams(run.benchmark, run.params)}
+            </span>
+          </span>
+        </button>
+        <span className={`inline-flex shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${statusClasses(run.status)}`}>
+          {run.status}
+        </span>
+      </div>
+      <AnimatePresence initial={false}>
+        {isOpen ? (
+          <motion.div
+            key="content"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="border-t border-emerald-300 p-3 text-xs text-zinc-700 dark:border-emerald-500/30 dark:text-zinc-300">
+              <dl className="grid gap-2 md:grid-cols-2">
+                <div>
+                  <dt className="font-semibold text-zinc-900 dark:text-zinc-100">Run ID</dt>
+                  <dd className="break-all">{run.runId}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-zinc-900 dark:text-zinc-100">Started At</dt>
+                  <dd>{formatDateTime(run.dispatchStartedAt ?? run.updatedAt ?? run.createdAt)}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-zinc-900 dark:text-zinc-100">Runner</dt>
+                  <dd>{run.runner.toUpperCase()}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-zinc-900 dark:text-zinc-100">Benchmark</dt>
+                  <dd>{benchmarkLabel(run.benchmark)}</dd>
+                </div>
+                <div className="md:col-span-2">
+                  <dt className="font-semibold text-zinc-900 dark:text-zinc-100">Parameters</dt>
+                  <dd>{formatBenchmarkParams(run.benchmark, run.params)}</dd>
+                </div>
+              </dl>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  )
+}
+
 export function InProgressRunsCard({
   items,
   completedItems = [],
@@ -209,9 +278,14 @@ export function InProgressRunsCard({
 }) {
   const orderedCpuItems = useMemo(() => sortByQueuePriority(items.filter((item) => item.status === 'QUEUED' && item.runner === 'cpu')), [items])
   const orderedGpuItems = useMemo(() => sortByQueuePriority(items.filter((item) => item.status === 'QUEUED' && item.runner === 'gpu')), [items])
+  const activeCpuRun = useMemo(() => sortByCompletion(items.filter((item) => isActiveRun(item) && item.runner === 'cpu'))[0], [items])
+  const activeGpuRun = useMemo(() => sortByCompletion(items.filter((item) => isActiveRun(item) && item.runner === 'gpu'))[0], [items])
   const orderedItems = useMemo(() => [...orderedCpuItems, ...orderedGpuItems], [orderedCpuItems, orderedGpuItems])
   const completedRuns = useMemo(() => sortByCompletion(completedItems.filter(isTerminalRun)).slice(0, 6), [completedItems])
-  const firstRunIds = useMemo(() => [orderedCpuItems[0]?.runId, orderedGpuItems[0]?.runId].filter((runId): runId is string => Boolean(runId)), [orderedCpuItems, orderedGpuItems])
+  const firstRunIds = useMemo(() => [
+    activeCpuRun?.runId ?? orderedCpuItems[0]?.runId,
+    activeGpuRun?.runId ?? orderedGpuItems[0]?.runId,
+  ].filter((runId): runId is string => Boolean(runId)), [activeCpuRun, activeGpuRun, orderedCpuItems, orderedGpuItems])
   const [openRunIds, setOpenRunIds] = useState<Set<string>>(() => new Set(firstRunIds))
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [reorderError, setReorderError] = useState<string | null>(null)
@@ -275,17 +349,25 @@ export function InProgressRunsCard({
     }
   }
 
-  const renderQueueSection = (runner: Runner, queueItems: RunRecord[]) => {
+  const renderQueueSection = (runner: Runner, queueItems: RunRecord[], activeRun?: RunRecord) => {
     const title = runner === 'cpu' ? 'Queued CPU Runs' : 'Queued GPU Runs'
-    const badge = `${queueItems.length} queued ${queueItems.length === 1 ? 'run' : 'runs'}`
+    const runnerLabel = runner.toUpperCase()
+    const queuedBadge = `${queueItems.length} queued ${runnerLabel} ${queueItems.length === 1 ? 'run' : 'runs'}`
+    const activeCount = activeRun ? 1 : 0
+    const activeBadge = `${activeCount} active ${runnerLabel} ${activeCount === 1 ? 'run' : 'runs'}`
 
     return (
       <GlowCard>
         <div className="flex items-center justify-between gap-4">
           <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{title}</h3>
-          <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-800 dark:border-cyan-300/20 dark:bg-cyan-300/10 dark:text-cyan-200">
-            {badge}
-          </span>
+          <div className="flex flex-wrap justify-end gap-2">
+            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-800 dark:border-emerald-300/20 dark:bg-emerald-300/10 dark:text-emerald-200">
+              {activeBadge}
+            </span>
+            <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-800 dark:border-cyan-300/20 dark:bg-cyan-300/10 dark:text-cyan-200">
+              {queuedBadge}
+            </span>
+          </div>
         </div>
         {deleteError ? (
           <div className="mt-3 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:border-red-400/50 dark:bg-red-900/30 dark:text-red-200">
@@ -297,12 +379,19 @@ export function InProgressRunsCard({
             {reorderError}
           </div>
         ) : null}
+        {activeRun ? (
+          <div className="mt-4">
+            <ActiveRunRow run={activeRun} isOpen={openRunIds.has(activeRun.runId)} onToggle={toggleRun} />
+          </div>
+        ) : null}
         {queueItems.length === 0 ? (
-          <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">No queued {runner.toUpperCase()} runs.</p>
+          <p className={activeRun ? 'mt-3 text-sm text-zinc-500 dark:text-zinc-400' : 'mt-4 text-sm text-zinc-500 dark:text-zinc-400'}>
+            No queued {runner.toUpperCase()} runs.
+          </p>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(event) => void handleDragEnd(event, queueItems)}>
             <SortableContext items={queueItems.map((run) => run.runId)} strategy={verticalListSortingStrategy}>
-              <div className="mt-4 space-y-3">
+              <div className={activeRun ? 'mt-3 space-y-3' : 'mt-4 space-y-3'}>
                 {queueItems.map((run, index) => (
                   <SortableQueuedRun
                     key={run.runId}
@@ -324,8 +413,8 @@ export function InProgressRunsCard({
 
   return (
     <>
-      {renderQueueSection('cpu', orderedCpuItems)}
-      {renderQueueSection('gpu', orderedGpuItems)}
+      {renderQueueSection('cpu', orderedCpuItems, activeCpuRun)}
+      {renderQueueSection('gpu', orderedGpuItems, activeGpuRun)}
       <GlowCard>
         <div className="flex items-center justify-between gap-4">
           <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Completed Runs</h3>

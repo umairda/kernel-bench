@@ -42,8 +42,10 @@ describe('InProgressRunsCard', () => {
 
     expect(screen.getByText('Queued CPU Runs')).toBeInTheDocument()
     expect(screen.getByText('Queued GPU Runs')).toBeInTheDocument()
-    expect(screen.getByText('2 queued runs')).toBeInTheDocument()
-    expect(screen.getByText('0 queued runs')).toBeInTheDocument()
+    expect(screen.getByText('0 active CPU runs')).toBeInTheDocument()
+    expect(screen.getByText('0 active GPU runs')).toBeInTheDocument()
+    expect(screen.getByText('2 queued CPU runs')).toBeInTheDocument()
+    expect(screen.getByText('0 queued GPU runs')).toBeInTheDocument()
     expect(screen.getByText('Priority 1: CPU Vector')).toBeInTheDocument()
     expect(screen.getByText('Priority 2: CPU Vector')).toBeInTheDocument()
     expect(screen.getByText('run-1')).toBeInTheDocument()
@@ -60,6 +62,20 @@ describe('InProgressRunsCard', () => {
     expect(screen.getByText('Queued GPU Runs')).toBeInTheDocument()
     expect(screen.getByText('Priority 1: CPU Vector')).toBeInTheDocument()
     expect(screen.getByText('Priority 1: GPU Vector')).toBeInTheDocument()
+  })
+
+  it('shows active runs above queued runs without priority controls', () => {
+    renderWithClient([
+      run({ runId: 'active-cpu-run', status: 'RUNNING', runner: 'cpu', dispatchStartedAt: '2026-05-03T10:02:00Z' }),
+      run({ runId: 'queued-cpu-run', runner: 'cpu', queuedAt: '2026-05-03T10:03:00Z' }),
+    ])
+
+    expect(screen.getByText('Active: CPU Vector')).toBeInTheDocument()
+    expect(screen.getByText('1 active CPU run')).toBeInTheDocument()
+    expect(screen.getByText('Priority 1: CPU Vector')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /drag queued run 2/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /drag queued run 1/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /delete/i })).toBeInTheDocument()
   })
 
   it('shows completed runs with run status cards', () => {
