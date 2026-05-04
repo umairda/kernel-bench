@@ -35,7 +35,7 @@ function createdTooOld(createdAt?: string): boolean {
 async function reconcile(item: Record<string, any>): Promise<Record<string, any>> {
   if (!['STARTING','RUNNING'].includes(item.status)) return item
 
-  if (item.status === 'STARTING' && !item.commandId && createdTooOld(item.createdAt)) {
+  if (item.status === 'STARTING' && !item.commandId && createdTooOld(item.updatedAt ?? item.createdAt)) {
     await ddb.send(new UpdateCommand({
       TableName: RUNS_TABLE_NAME,
       Key: { runId: item.runId },

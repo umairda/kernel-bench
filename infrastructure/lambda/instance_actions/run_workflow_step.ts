@@ -1,6 +1,6 @@
 import type { Context } from 'aws-lambda'
 import { DeleteCommand, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
-import { DescribeInstanceStatusCommand, DescribeInstancesCommand, StartInstancesCommand, waitUntilInstanceRunning, waitUntilInstanceStopped } from '@aws-sdk/client-ec2'
+import { DescribeInstanceStatusCommand, DescribeInstancesCommand, StartInstancesCommand } from '@aws-sdk/client-ec2'
 import { GetLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs'
 import { DescribeInstanceInformationCommand, GetCommandInvocationCommand, SendCommandCommand } from '@aws-sdk/client-ssm'
 import { GetObjectCommand } from '@aws-sdk/client-s3'
@@ -27,8 +27,10 @@ type WorkflowInput = {
   instanceId: string
   s3Prefix: string
   createdAt: string
+  dispatchStartedAt?: string
   commandId?: string
   launchTiming?: Record<string, number>
+  startup?: { isReady: boolean; phase?: string }
   poll?: { isTerminal: boolean; mappedStatus?: string; ssmStatus?: string; responseCode?: number }
   errorMessage?: string
 }
@@ -147,6 +149,25 @@ async function getInstanceHealth(instanceId: string): Promise<{ instanceStatus?:
   return { instanceStatus: st?.InstanceStatus?.Status, systemStatus: st?.SystemStatus?.Status }
 }
 
+function elapsedMsSince(iso: string | undefined): number | undefined {
+  if (!iso) return undefined
+  const t = new Date(iso).getTime()
+  if (!Number.isFinite(t)) return undefined
+  return Math.max(0, Date.now() - t)
+}
+
+function elapsedMsBetween(startIso: string | undefined, endIso: string | undefined): number | undefined {
+  if (!startIso || !endIso) return undefined
+  const start = new Date(startIso).getTime()
+  const end = new Date(endIso).getTime()
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return undefined
+  return Math.max(0, end - start)
+}
+
+function startupNotReady(input: WorkflowInput, phase: string) {
+  return { ...input, status: 'STARTING', startup: { isReady: false, phase } }
+}
+
 async function writeStartupProgress(runId: string, progress: Record<string, string>) {
   const observedAt = progress.observedAt ?? nowIso()
   await ddb.send(new UpdateCommand({
@@ -168,54 +189,51 @@ async function writeStartupProgress(runId: string, progress: Record<string, stri
 }
 
 async function startAndWait(input: WorkflowInput) {
-  const requestStart = performance.now()
-  const bootStart = performance.now()
   let state = await currentState(input.instanceId)
+
   if (state === 'pending') {
     await writeStartupProgress(input.runId, { phase: 'WAITING_FOR_INSTANCE_RUNNING', ec2State: 'pending', detail: 'Instance is pending' })
-    await waitUntilInstanceRunning({ client: ec2, maxWaitTime: 300 }, { InstanceIds: [input.instanceId] })
+    return startupNotReady(input, 'WAITING_FOR_INSTANCE_RUNNING')
   } else if (state === 'stopping') {
     await writeStartupProgress(input.runId, { phase: 'WAITING_FOR_INSTANCE_STOPPED', ec2State: 'stopping', detail: 'Waiting for stop before start' })
-    await waitUntilInstanceStopped({ client: ec2, maxWaitTime: 300 }, { InstanceIds: [input.instanceId] })
+    return startupNotReady(input, 'WAITING_FOR_INSTANCE_STOPPED')
+  } else if (state === 'shutting-down' || state === 'terminated') {
+    throw new Error(`Instance ${input.instanceId} cannot be started from state ${state}`)
+  } else if (state === 'stopped') {
     await writeStartupProgress(input.runId, { phase: 'STARTING_INSTANCE', ec2State: 'stopped', detail: 'Sending StartInstances command' })
     await ec2.send(new StartInstancesCommand({ InstanceIds: [input.instanceId] }))
-    await waitUntilInstanceRunning({ client: ec2, maxWaitTime: 300 }, { InstanceIds: [input.instanceId] })
+    return startupNotReady(input, 'STARTING_INSTANCE')
   } else if (state !== 'running') {
     await writeStartupProgress(input.runId, { phase: 'STARTING_INSTANCE', ec2State: state ?? 'unknown', detail: 'Sending StartInstances command' })
     await ec2.send(new StartInstancesCommand({ InstanceIds: [input.instanceId] }))
-    await writeStartupProgress(input.runId, { phase: 'WAITING_FOR_INSTANCE_RUNNING', ec2State: 'pending', detail: 'Waiting for running state' })
-    await waitUntilInstanceRunning({ client: ec2, maxWaitTime: 300 }, { InstanceIds: [input.instanceId] })
+    return startupNotReady(input, 'STARTING_INSTANCE')
   }
 
-  const start = Date.now()
-  let online = false
-  while (Date.now() - start < 300000) {
-    const ec2State = await currentState(input.instanceId)
-    const health = await getInstanceHealth(input.instanceId)
-    const r = await ssm.send(new DescribeInstanceInformationCommand({ Filters: [{ Key: 'InstanceIds', Values: [input.instanceId] }], MaxResults: 5 }))
-    const ping = r.InstanceInformationList?.[0]?.PingStatus ?? 'Offline'
-    await writeStartupProgress(input.runId, {
-      phase: 'WAITING_FOR_SSM_ONLINE',
-      ec2State: ec2State ?? 'unknown',
-      instanceStatus: health.instanceStatus ?? 'unknown',
-      systemStatus: health.systemStatus ?? 'unknown',
-      ssmPingStatus: ping,
-      detail: ping === 'Online' ? 'SSM agent is online' : 'Waiting for SSM agent to become online',
-    })
-    if (ping === 'Online') {
-      online = true
-      break
-    }
-    await new Promise((res) => setTimeout(res, 5000))
+  const health = await getInstanceHealth(input.instanceId)
+  const r = await ssm.send(new DescribeInstanceInformationCommand({ Filters: [{ Key: 'InstanceIds', Values: [input.instanceId] }], MaxResults: 5 }))
+  const ping = r.InstanceInformationList?.[0]?.PingStatus ?? 'Offline'
+  await writeStartupProgress(input.runId, {
+    phase: ping === 'Online' ? 'RUNNER_READY' : 'WAITING_FOR_SSM_ONLINE',
+    ec2State: state,
+    instanceStatus: health.instanceStatus ?? 'unknown',
+    systemStatus: health.systemStatus ?? 'unknown',
+    ssmPingStatus: ping,
+    detail: ping === 'Online' ? 'Runner instance is ready for SSM command dispatch' : 'Waiting for SSM agent to become online',
+  })
+  if (ping !== 'Online') {
+    return startupNotReady(input, 'WAITING_FOR_SSM_ONLINE')
   }
-  if (!online) throw new Error(`SSM agent did not become Online for instance ${input.instanceId}`)
 
-  const bootEnd = performance.now()
+  const startupMs = elapsedMsSince(input.dispatchStartedAt ?? input.createdAt)
+  const queuedMs = elapsedMsBetween(input.createdAt, input.dispatchStartedAt)
   return {
     ...input,
+    status: 'STARTING',
+    startup: { isReady: true, phase: 'RUNNER_READY' },
     launchTiming: {
-      queueStartRequestMs: Number((performance.now() - requestStart).toFixed(3)),
-      instanceBootSsmReadyMs: Number((bootEnd - bootStart).toFixed(3)),
+      ...(input.launchTiming ?? {}),
+      ...(queuedMs === undefined ? {} : { queueStartRequestMs: queuedMs }),
+      ...(startupMs === undefined ? {} : { instanceBootSsmReadyMs: startupMs }),
     },
   }
 }

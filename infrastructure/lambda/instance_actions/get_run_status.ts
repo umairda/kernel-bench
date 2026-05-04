@@ -78,8 +78,8 @@ export async function handler(event: APIGatewayProxyEventV2) {
   const instanceId = item.instanceId as string | undefined
   if (!commandId || !instanceId) {
     if (item.status === 'STARTING') {
-      const created = parseIso(item.createdAt)
-      if (created && (Date.now() - created.getTime()) / 1000 >= STARTING_STALE_SECONDS) {
+      const lastStartupUpdate = parseIso(item.updatedAt ?? item.createdAt)
+      if (lastStartupUpdate && (Date.now() - lastStartupUpdate.getTime()) / 1000 >= STARTING_STALE_SECONDS) {
         await ddb.send(new UpdateCommand({
           TableName: RUNS_TABLE_NAME,
           Key: { runId },

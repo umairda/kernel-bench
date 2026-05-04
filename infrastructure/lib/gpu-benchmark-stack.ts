@@ -400,6 +400,7 @@ export class KernelBenchStack extends cdk.Stack {
         'instanceId.$': '$.instanceId',
         's3Prefix.$': '$.s3Prefix',
         'createdAt.$': '$.createdAt',
+        'dispatchStartedAt.$': '$.dispatchStartedAt',
       }),
       resultPath: '$',
     });
@@ -455,23 +456,68 @@ export class KernelBenchStack extends cdk.Stack {
       }),
       resultPath: '$',
     });
+    const startupWait = new sfn.Wait(this, 'KernelBench-WaitBeforeStartupRetry', {
+      time: sfn.WaitTime.duration(cdk.Duration.seconds(30)),
+    });
     const waitForPoll = new sfn.Wait(this, 'KernelBench-WaitBeforeFirstPoll', {
       time: sfn.WaitTime.duration(cdk.Duration.seconds(15)),
     });
     const waitLoop = new sfn.Wait(this, 'KernelBench-WaitBeforeNextPoll', {
       time: sfn.WaitTime.duration(cdk.Duration.seconds(15)),
     });
-    const choice = new sfn.Choice(this, 'KernelBench-IsTerminal');
+    const recordedFailure = new sfn.Succeed(this, 'KernelBench-RecordedFailure');
+    const startupChoice = new sfn.Choice(this, 'KernelBench-IsRunnerReady');
+    const dispatchChoice = new sfn.Choice(this, 'KernelBench-DispatchSucceeded');
+    const pollChoice = new sfn.Choice(this, 'KernelBench-IsTerminal');
+    startupWait.next(startAndWaitTask);
+    startAndWaitTask.next(startupChoice);
+    startupChoice
+      .when(
+        sfn.Condition.and(
+          sfn.Condition.isPresent('$.status'),
+          sfn.Condition.stringEquals('$.status', 'FAILED'),
+        ),
+        recordedFailure,
+      )
+      .when(
+        sfn.Condition.and(
+          sfn.Condition.isPresent('$.startup.isReady'),
+          sfn.Condition.booleanEquals('$.startup.isReady', true),
+        ),
+        dispatchTask,
+      )
+      .otherwise(startupWait);
+    dispatchTask.next(dispatchChoice);
+    dispatchChoice
+      .when(
+        sfn.Condition.and(
+          sfn.Condition.isPresent('$.status'),
+          sfn.Condition.stringEquals('$.status', 'FAILED'),
+        ),
+        recordedFailure,
+      )
+      .otherwise(waitForPoll);
     waitForPoll.next(pollTask);
     waitLoop.next(pollTask);
-    pollTask.next(choice);
-    choice
-      .when(sfn.Condition.booleanEquals('$.poll.isTerminal', true), finalizeTask)
+    pollTask.next(pollChoice);
+    pollChoice
+      .when(
+        sfn.Condition.and(
+          sfn.Condition.isPresent('$.status'),
+          sfn.Condition.stringEquals('$.status', 'FAILED'),
+        ),
+        recordedFailure,
+      )
+      .when(
+        sfn.Condition.and(
+          sfn.Condition.isPresent('$.poll.isTerminal'),
+          sfn.Condition.booleanEquals('$.poll.isTerminal', true),
+        ),
+        finalizeTask,
+      )
       .otherwise(waitLoop);
 
-    const workflowDefinition = startAndWaitTask
-      .next(dispatchTask)
-      .next(waitForPoll);
+    const workflowDefinition = startAndWaitTask;
 
     const runWorkflowStateMachine = new sfn.StateMachine(this, 'KernelBench-RunWorkflowStateMachine', {
       stateMachineName: runWorkflowStateMachineName,

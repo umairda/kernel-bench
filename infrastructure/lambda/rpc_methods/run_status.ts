@@ -71,7 +71,7 @@ export async function rpcRunStatus(rawParams: unknown) {
   const commandId = item.commandId as string | undefined
   const instanceId = item.instanceId as string | undefined
   if (!commandId || !instanceId) {
-    if (item.status === 'STARTING' && createdTooOld(item.createdAt)) {
+    if (item.status === 'STARTING' && createdTooOld(item.updatedAt ?? item.createdAt)) {
       await ddb.send(new UpdateCommand({
         TableName: RUNS_TABLE_NAME,
         Key: { runId },

@@ -391,7 +391,7 @@ export async function reconcileRunningItem(item: Record<string, any>): Promise<R
   const workflowTerminal = await reconcileWorkflowTerminal(item)
   if (workflowTerminal) return workflowTerminal
 
-  if (item.status === 'STARTING' && !item.commandId && createdTooOld(item.createdAt)) {
+  if (item.status === 'STARTING' && !item.commandId && createdTooOld(item.updatedAt ?? item.createdAt)) {
     await ddb.send(new UpdateCommand({
       TableName: RUNS_TABLE_NAME,
       Key: { runId: item.runId },
