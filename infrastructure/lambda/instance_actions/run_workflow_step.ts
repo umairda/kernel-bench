@@ -1,7 +1,7 @@
 import type { Context } from 'aws-lambda'
 import { DeleteCommand, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { DescribeInstanceStatusCommand, DescribeInstancesCommand, StartInstancesCommand, waitUntilInstanceRunning, waitUntilInstanceStopped } from '@aws-sdk/client-ec2'
-import { FilterLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs'
+import { GetLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs'
 import { DescribeInstanceInformationCommand, GetCommandInvocationCommand, SendCommandCommand } from '@aws-sdk/client-ssm'
 import { GetObjectCommand } from '@aws-sdk/client-s3'
 import { cloudwatchLogs, ddb, ec2, putMetric, s3, ssm } from '../aws'
@@ -89,22 +89,29 @@ function extractLatestProgress(standardOutputContent?: string): Record<string, a
 
 async function extractLatestProgressFromLogs(commandId?: string, instanceId?: string): Promise<Record<string, any> | undefined> {
   if (!commandId || !instanceId) return undefined
-  try {
-    const resp = await cloudwatchLogs.send(new FilterLogEventsCommand({
-      logGroupName: SSM_OUTPUT_LOG_GROUP,
-      logStreamNamePrefix: `${commandId}/${instanceId}/`,
-      filterPattern: `"${PROGRESS_PREFIX.trim()}"`,
-      limit: 25,
-    }))
-    const events = [...(resp.events ?? [])].sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
-    for (const event of events) {
-      const lines = String(event.message ?? '').split('\n')
-      for (let i = lines.length - 1; i >= 0; i--) {
-        const parsed = parseProgressLine(lines[i]?.trim() ?? '')
-        if (parsed) return parsed
+  const streamNames = [
+    `${commandId}/${instanceId}/aws-runShellScript/stdout`,
+    `${commandId}/${instanceId}/aws-runShellScript/stderr`,
+  ]
+
+  for (const logStreamName of streamNames) {
+    try {
+      const resp = await cloudwatchLogs.send(new GetLogEventsCommand({
+        logGroupName: SSM_OUTPUT_LOG_GROUP,
+        logStreamName,
+        startFromHead: false,
+        limit: 50,
+      }))
+      const events = [...(resp.events ?? [])].sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
+      for (const event of events) {
+        const lines = String(event.message ?? '').split('\n')
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const parsed = parseProgressLine(lines[i]?.trim() ?? '')
+          if (parsed) return parsed
+        }
       }
-    }
-  } catch {}
+    } catch {}
+  }
   return undefined
 }
 

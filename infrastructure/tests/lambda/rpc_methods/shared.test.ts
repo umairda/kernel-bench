@@ -54,6 +54,52 @@ describe('rpc_methods/shared', () => {
     })
   })
 
+  it('reads latest progress from the exact SSM stdout log stream', async () => {
+    const cloudwatchLogs = {
+      send: vi.fn().mockResolvedValue({
+        events: [
+          {
+            timestamp: 100,
+            message: 'KERNEL_BENCH_PROGRESS op=matmul backend=cpu status=running rows_done=10 total_rows=100\n',
+          },
+          {
+            timestamp: 200,
+            message: 'KERNEL_BENCH_PROGRESS op=matmul backend=cpu status=running rows_done=25 total_rows=100\n',
+          },
+        ],
+      }),
+    }
+
+    vi.doMock('../../../lambda/aws', () => ({
+      cloudwatchLogs,
+      ddb: { send: vi.fn() },
+      ec2: { send: vi.fn() },
+      putMetric: vi.fn(),
+      s3: { send: vi.fn() },
+      sfn: { send: vi.fn() },
+      ssm: { send: vi.fn() },
+    }))
+
+    const shared = await import('../../../lambda/rpc_methods/shared')
+    const progress = await shared.extractLatestProgressFromLogs('cmd-1', 'i-123')
+
+    expect(cloudwatchLogs.send).toHaveBeenCalledWith(expect.objectContaining({
+      input: expect.objectContaining({
+        logGroupName: '/kernelbench/ssm-output',
+        logStreamName: 'cmd-1/i-123/aws-runShellScript/stdout',
+        startFromHead: false,
+        limit: 50,
+      }),
+    }))
+    expect(progress).toMatchObject({
+      op: 'matmul',
+      backend: 'cpu',
+      status: 'running',
+      rowsDone: 25,
+      totalRows: 100,
+    })
+  })
+
   it('can release a runner lock without aborting in-flight workflow execution', async () => {
     const ddb = { send: vi.fn().mockResolvedValue(undefined) }
     const ssm = { send: vi.fn() }
