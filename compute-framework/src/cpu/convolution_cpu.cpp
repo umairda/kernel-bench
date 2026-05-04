@@ -13,6 +13,7 @@
 namespace
 {
     constexpr IndexType kMinOutputElementsPerWorker = 4096;
+    constexpr IndexType kMinProgressElementsPerChunk = 65536;
     constexpr std::chrono::seconds kHeartbeatInterval(60);
     constexpr std::chrono::minutes kDetailedInterval(5);
 
@@ -80,51 +81,53 @@ namespace
     }
 
     template <typename Fn>
-    void parallel_for_range_with_progress(
-        const IndexType length,
+    void parallel_for_rows_with_progress(
+        const IndexType row_count,
         const IndexType total_elements,
+        const IndexType elements_per_row,
         Fn fn)
     {
-        if (length == 0)
+        if (row_count == 0 || total_elements == 0 || elements_per_row == 0)
         {
             return;
         }
 
         const auto op_start = std::chrono::steady_clock::now();
+        log_progress(0, total_elements, op_start, false);
+
         const unsigned int hardware_threads = std::thread::hardware_concurrency();
         const IndexType available_workers = static_cast<IndexType>(hardware_threads == 0 ? 1 : hardware_threads);
-        const IndexType useful_workers = std::max<IndexType>(1, (length + kMinOutputElementsPerWorker - 1) / kMinOutputElementsPerWorker);
-        const IndexType worker_count = std::min<IndexType>(available_workers, useful_workers);
+        const IndexType useful_workers = std::max<IndexType>(1, (total_elements + kMinOutputElementsPerWorker - 1) / kMinOutputElementsPerWorker);
+        const IndexType worker_count = std::min<IndexType>(row_count, std::min<IndexType>(available_workers, useful_workers));
+        const IndexType rows_per_chunk = std::max<IndexType>(1, kMinProgressElementsPerChunk / elements_per_row);
 
-        if (worker_count == 1)
-        {
-            fn(0, length);
-            return;
-        }
-
+        std::atomic<IndexType> next_row{0};
         std::atomic<IndexType> completed_elements{0};
         std::condition_variable progress_cv;
         std::mutex progress_mutex;
-        const IndexType chunk = (length + worker_count - 1) / worker_count;
         std::vector<std::thread> workers;
         workers.reserve(static_cast<std::size_t>(worker_count));
 
         for (IndexType worker = 0; worker < worker_count; ++worker)
         {
-            const IndexType begin = worker * chunk;
-            const IndexType end = std::min<IndexType>(length, begin + chunk);
-            if (begin >= end)
-            {
-                continue;
-            }
-
-            workers.emplace_back([&, begin, end]()
+            workers.emplace_back([&]()
                                  {
-                                     const IndexType completed = fn(begin, end);
-                                     const IndexType done = completed_elements.fetch_add(completed, std::memory_order_relaxed) + completed;
-                                     if (done >= total_elements)
+                                     while (true)
                                      {
-                                         progress_cv.notify_one();
+                                         const IndexType begin = next_row.fetch_add(rows_per_chunk, std::memory_order_relaxed);
+                                         if (begin >= row_count)
+                                         {
+                                             break;
+                                         }
+
+                                         const IndexType end = std::min<IndexType>(row_count, begin + rows_per_chunk);
+                                         fn(begin, end);
+                                         const IndexType completed = (end - begin) * elements_per_row;
+                                         const IndexType done = completed_elements.fetch_add(completed, std::memory_order_relaxed) + completed;
+                                         if (done >= total_elements)
+                                         {
+                                             progress_cv.notify_one();
+                                         }
                                      }
                                  });
         }
@@ -226,76 +229,70 @@ StatusCode cpu_convolution_op(
     }
 
     const IndexType spatial_size = h_out * w_out;
-    const IndexType channel_plane_count = out_n * out_c;
+    const IndexType output_row_count = out_n * out_c * h_out;
 
-    parallel_for_range_with_progress(channel_plane_count, out_size, [&](const IndexType begin, const IndexType end)
-                                     {
-        IndexType completed = 0;
-        for (IndexType plane = begin; plane < end; ++plane)
+    parallel_for_rows_with_progress(output_row_count, out_size, w_out, [&](const IndexType begin, const IndexType end)
+                                    {
+        for (IndexType output_row = begin; output_row < end; ++output_row)
         {
+            const IndexType plane = output_row / h_out;
+            const IndexType out_y = output_row - plane * h_out;
             const IndexType batch = plane / out_c;
             const IndexType out_channel = plane % out_c;
             const IndexType input_batch_offset = batch * c_in * h_in * w_in;
             const IndexType output_plane_offset = plane * spatial_size;
             const IndexType filter_out_offset = out_channel * c_in * k_h * k_w;
 
-            for (IndexType out_y = 0; out_y < h_out; ++out_y)
+            const int input_y_origin =
+                static_cast<int>(out_y * params.stride_height) -
+                static_cast<int>(params.padding_height);
+            const IndexType kernel_y_begin =
+                input_y_origin < 0 ? static_cast<IndexType>(-input_y_origin) : 0;
+            const IndexType kernel_y_end = std::min<IndexType>(
+                k_h,
+                h_in > static_cast<IndexType>(std::max(0, input_y_origin))
+                    ? h_in - static_cast<IndexType>(std::max(0, input_y_origin)) + kernel_y_begin
+                    : kernel_y_begin);
+
+            for (IndexType out_x = 0; out_x < w_out; ++out_x)
             {
-                const int input_y_origin =
-                    static_cast<int>(out_y * params.stride_height) -
-                    static_cast<int>(params.padding_height);
-                const IndexType kernel_y_begin =
-                    input_y_origin < 0 ? static_cast<IndexType>(-input_y_origin) : 0;
-                const IndexType kernel_y_end = std::min<IndexType>(
-                    k_h,
-                    h_in > static_cast<IndexType>(std::max(0, input_y_origin))
-                        ? h_in - static_cast<IndexType>(std::max(0, input_y_origin)) + kernel_y_begin
-                        : kernel_y_begin);
+                const int input_x_origin =
+                    static_cast<int>(out_x * params.stride_width) -
+                    static_cast<int>(params.padding_width);
+                const IndexType kernel_x_begin =
+                    input_x_origin < 0 ? static_cast<IndexType>(-input_x_origin) : 0;
+                const IndexType kernel_x_end = std::min<IndexType>(
+                    k_w,
+                    w_in > static_cast<IndexType>(std::max(0, input_x_origin))
+                        ? w_in - static_cast<IndexType>(std::max(0, input_x_origin)) + kernel_x_begin
+                        : kernel_x_begin);
 
-                for (IndexType out_x = 0; out_x < w_out; ++out_x)
+                float sum = 0.0f;
+
+                for (IndexType in_channel = 0; in_channel < c_in; ++in_channel)
                 {
-                    const int input_x_origin =
-                        static_cast<int>(out_x * params.stride_width) -
-                        static_cast<int>(params.padding_width);
-                    const IndexType kernel_x_begin =
-                        input_x_origin < 0 ? static_cast<IndexType>(-input_x_origin) : 0;
-                    const IndexType kernel_x_end = std::min<IndexType>(
-                        k_w,
-                        w_in > static_cast<IndexType>(std::max(0, input_x_origin))
-                            ? w_in - static_cast<IndexType>(std::max(0, input_x_origin)) + kernel_x_begin
-                            : kernel_x_begin);
+                    const IndexType input_channel_offset = input_batch_offset + in_channel * h_in * w_in;
+                    const IndexType filter_channel_offset = filter_out_offset + in_channel * k_h * k_w;
 
-                    float sum = 0.0f;
-
-                    for (IndexType in_channel = 0; in_channel < c_in; ++in_channel)
+                    for (IndexType kernel_y = kernel_y_begin; kernel_y < kernel_y_end; ++kernel_y)
                     {
-                        const IndexType input_channel_offset = input_batch_offset + in_channel * h_in * w_in;
-                        const IndexType filter_channel_offset = filter_out_offset + in_channel * k_h * k_w;
+                        const IndexType input_y = static_cast<IndexType>(input_y_origin + static_cast<int>(kernel_y));
+                        const IndexType input_row_offset = input_channel_offset + input_y * w_in;
+                        const IndexType filter_row_offset = filter_channel_offset + kernel_y * k_w;
+                        const IndexType input_x_start = static_cast<IndexType>(input_x_origin + static_cast<int>(kernel_x_begin));
 
-                        for (IndexType kernel_y = kernel_y_begin; kernel_y < kernel_y_end; ++kernel_y)
+                        for (IndexType kernel_x = kernel_x_begin; kernel_x < kernel_x_end; ++kernel_x)
                         {
-                            const IndexType input_y = static_cast<IndexType>(input_y_origin + static_cast<int>(kernel_y));
-                            const IndexType input_row_offset = input_channel_offset + input_y * w_in;
-                            const IndexType filter_row_offset = filter_channel_offset + kernel_y * k_w;
-                            const IndexType input_x_start = static_cast<IndexType>(input_x_origin + static_cast<int>(kernel_x_begin));
-
-                            for (IndexType kernel_x = kernel_x_begin; kernel_x < kernel_x_end; ++kernel_x)
-                            {
-                                const IndexType input_idx = input_row_offset + input_x_start + (kernel_x - kernel_x_begin);
-                                const IndexType filter_idx = filter_row_offset + kernel_x;
-                                sum += input[input_idx] * filter[filter_idx];
-                            }
+                            const IndexType input_idx = input_row_offset + input_x_start + (kernel_x - kernel_x_begin);
+                            const IndexType filter_idx = filter_row_offset + kernel_x;
+                            sum += input[input_idx] * filter[filter_idx];
                         }
                     }
-
-                    out[output_plane_offset + out_y * w_out + out_x] = sum;
                 }
+
+                out[output_plane_offset + out_y * w_out + out_x] = sum;
             }
-
-            completed += spatial_size;
         }
-
-        return completed;
     });
 
     return StatusCode::Success;

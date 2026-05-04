@@ -278,7 +278,10 @@ async function dispatch(input: WorkflowInput) {
       CloudWatchLogGroupName: SSM_OUTPUT_LOG_GROUP,
       CloudWatchOutputEnabled: true,
     },
-    Parameters: { commands },
+    Parameters: {
+      commands,
+      executionTimeout: [String(timeoutSeconds)],
+    },
   }))
   const commandId = send.Command?.CommandId
   if (!commandId) throw new Error('missing command id from SSM')

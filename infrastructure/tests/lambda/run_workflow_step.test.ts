@@ -106,6 +106,32 @@ describe('run_workflow_step', () => {
     expect(out.launchTiming.instanceBootSsmReadyMs).toBeGreaterThanOrEqual(0)
   })
 
+  it('DISPATCH applies the computed timeout to the shell execution timeout', async () => {
+    const aws = makeAwsMocks()
+    process.env.BASE_COMMAND_TIMEOUT_SECONDS = String(90 * 60)
+    process.env.MAX_COMMAND_TIMEOUT_SECONDS = String(6 * 60 * 60)
+    aws.ddb.send.mockResolvedValue({})
+    aws.ssm.send.mockResolvedValue({ Command: { CommandId: 'cmd-1' } })
+    vi.doMock('../../lambda/aws', () => aws)
+
+    const { handler } = await import('../../lambda/instance_actions/run_workflow_step')
+    const out = await handler({
+      action: 'DISPATCH',
+      runId: 'r1',
+      runner: 'cpu',
+      benchmark: 'vector',
+      params: { vectorLength: 10 },
+      instanceId: 'i-cpu',
+      s3Prefix: 'x/',
+      createdAt: '2026-01-01T00:00:00Z',
+    } as any, {} as any)
+
+    const commandInput = aws.ssm.send.mock.calls[0][0].input
+    expect(out.commandId).toBe('cmd-1')
+    expect(commandInput.TimeoutSeconds).toBe(90 * 60)
+    expect(commandInput.Parameters.executionTimeout).toEqual([String(90 * 60)])
+  })
+
   it('FAIL action marks run failed', async () => {
     const aws = makeAwsMocks()
     aws.ddb.send.mockResolvedValue({})
