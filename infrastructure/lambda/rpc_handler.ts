@@ -2,6 +2,7 @@ import type { APIGatewayProxyEventV2 } from 'aws-lambda'
 import { isOriginVerified, JsonRpcError, jsonRpcFailure, jsonRpcSuccess, parseJsonRpcBody, response } from './common'
 import {
   rpcDeleteQueuedRun,
+  rpcReorderQueuedRuns,
   rpcHistoryConvolution,
   rpcHistoryMatmul,
   rpcHistoryVector,
@@ -15,6 +16,7 @@ import {
 const METHODS: Record<string, (params: unknown) => Promise<unknown>> = {
   startRun: rpcStartRun,
   deleteQueuedRun: rpcDeleteQueuedRun,
+  reorderQueuedRuns: rpcReorderQueuedRuns,
   getRunStatus: rpcRunStatus,
   listInProgressRuns: rpcInProgressRuns,
   getInstanceStates: rpcInstanceStates,

@@ -1,5 +1,6 @@
 export { rpcStartRun } from './start_run'
 export { rpcDeleteQueuedRun } from './delete_queued_run'
+export { rpcReorderQueuedRuns } from './reorder_queued_runs'
 export { rpcRunStatus } from './run_status'
 export { rpcInProgressRuns } from './in_progress_runs'
 export { rpcInstanceStates } from './instance_states'

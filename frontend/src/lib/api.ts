@@ -36,6 +36,7 @@ export type RunRecord = {
   params: Record<string, number>
   createdAt?: string
   queuedAt?: string
+  queuePriority?: number
   dispatchStartedAt?: string
   updatedAt?: string
   completedAt?: string
@@ -222,6 +223,10 @@ export function deleteQueuedRun(runId: string) {
   return rpc<{ ok: boolean; runId: string; runner: Runner }>('deleteQueuedRun', { runId })
 }
 
+export function reorderQueuedRuns(runIds: string[]) {
+  return rpc<{ ok: boolean; items: RunRecord[] }>('reorderQueuedRuns', { runIds })
+}
+
 export function getInstanceStates() {
   return rpc<InstanceStates>('getInstanceStates')
 }
@@ -278,6 +283,53 @@ export function useDeleteQueuedRunMutation() {
       queryClient.removeQueries({ queryKey: queryKeys.runStatus(runId) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.inProgressRuns() })
       void queryClient.invalidateQueries({ queryKey: queryKeys.instanceStates() })
+    },
+  })
+}
+
+export function useReorderQueuedRunsMutation() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: reorderQueuedRuns,
+    onMutate: async (runIds) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.inProgressRuns() })
+      const previous = queryClient.getQueryData<{ items: RunRecord[] }>(queryKeys.inProgressRuns())
+      const orderedQueued = new Map(runIds.map((runId, index) => [runId, index]))
+      const baseMs = Math.min(
+        ...runIds.map((runId) => {
+          const run = previous?.items.find((item) => item.runId === runId)
+          const ms = new Date(run?.queuedAt ?? run?.createdAt ?? '').getTime()
+          return Number.isFinite(ms) ? ms : Date.now()
+        }),
+      )
+      queryClient.setQueryData<{ items: RunRecord[] }>(queryKeys.inProgressRuns(), (current) => {
+        if (!current) {
+          return current
+        }
+        return {
+          items: current.items.map((item) => {
+            const priority = orderedQueued.get(item.runId)
+            if (priority === undefined) {
+              return item
+            }
+            return {
+              ...item,
+              queuedAt: new Date(baseMs + priority).toISOString(),
+              queuePriority: priority + 1,
+            } as RunRecord
+          }),
+        }
+      })
+      return { previous }
+    },
+    onError: (_error, _runIds, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(queryKeys.inProgressRuns(), context.previous)
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.inProgressRuns() })
     },
   })
 }
