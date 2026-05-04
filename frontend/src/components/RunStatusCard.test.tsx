@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import { RunStatusCard } from './RunStatusCard'
 
 describe('RunStatusCard', () => {
@@ -97,6 +97,42 @@ describe('RunStatusCard', () => {
     expect(screen.getByText('WORKFLOW_STEP_EXCEPTION')).toBeInTheDocument()
     expect(screen.getByText('Error:', { exact: false })).toBeInTheDocument()
     expect(screen.getByText(/removeUndefinedValues=true/)).toBeInTheDocument()
+  })
+
+  it('shows a retry button for failed runs', () => {
+    const onRetry = vi.fn()
+    const run = {
+      runId: 'run-failed-retry',
+      status: 'FAILED' as const,
+      benchmark: 'vector' as const,
+      runner: 'cpu' as const,
+      params: { vectorLength: 100000 },
+    }
+
+    render(<RunStatusCard title="CPU" instanceState="stopped" run={run} onRetry={onRetry} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /retry cpu run/i }))
+
+    expect(onRetry).toHaveBeenCalledWith(run)
+  })
+
+  it('does not show a retry button for completed runs', () => {
+    render(
+      <RunStatusCard
+        title="CPU"
+        instanceState="stopped"
+        run={{
+          runId: 'run-completed-no-retry',
+          status: 'COMPLETED',
+          benchmark: 'vector',
+          runner: 'cpu',
+          params: { vectorLength: 100000 },
+        }}
+        onRetry={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: /retry cpu run/i })).not.toBeInTheDocument()
   })
 
   it('shows vector element progress', () => {

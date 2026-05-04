@@ -130,6 +130,32 @@ export function ConvolutionSection({
   const bytesFilter = params.filterOutC * params.inputC * params.filterH * params.filterW * BYTES_PER_FLOAT32
   const bytesOutput = params.inputN * params.filterOutC * safeOutputH * safeOutputW * BYTES_PER_FLOAT32
   const bytesTotal = bytesInput + bytesFilter + bytesOutput
+  const retryCpuRun = async (run: RunRecord) => {
+    try {
+      onCpuStartError(null)
+      const result = await cpuStart.mutateAsync({
+        runner: 'cpu',
+        benchmark: run.benchmark,
+        params: run.params,
+      })
+      onCpuRunStarted(result.runId)
+    } catch (e) {
+      onCpuStartError(String(e))
+    }
+  }
+  const retryGpuRun = async (run: RunRecord) => {
+    try {
+      onGpuStartError(null)
+      const result = await gpuStart.mutateAsync({
+        runner: 'gpu',
+        benchmark: run.benchmark,
+        params: run.params,
+      })
+      onGpuRunStarted(result.runId)
+    } catch (e) {
+      onGpuStartError(String(e))
+    }
+  }
 
   return (
     <div className="rounded-2xl border border-zinc-300/70 bg-white/80 px-5 py-5 dark:border-white/10 dark:bg-zinc-900/50">
@@ -211,8 +237,8 @@ export function ConvolutionSection({
           </ShimmerButton>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          <RunStatusCard title="CPU" instanceState={cpuState} run={cpuRun} startError={cpuStartError} launching={cpuLaunching} />
-          <RunStatusCard title="GPU" instanceState={gpuState} run={gpuRun} startError={gpuStartError} launching={gpuLaunching} />
+          <RunStatusCard title="CPU" instanceState={cpuState} run={cpuRun} startError={cpuStartError} launching={cpuLaunching} onRetry={(run) => void retryCpuRun(run)} retrying={cpuLaunching} />
+          <RunStatusCard title="GPU" instanceState={gpuState} run={gpuRun} startError={gpuStartError} launching={gpuLaunching} onRetry={(run) => void retryGpuRun(run)} retrying={gpuLaunching} />
         </div>
       </div>
     </div>

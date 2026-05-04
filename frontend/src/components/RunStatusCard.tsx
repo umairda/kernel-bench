@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Loader2, RotateCcw } from 'lucide-react'
 import { formatBenchmarkParams } from '../benchmarks/benchmarkRegistry'
 import { GlowCard } from './aceternity/glow-card'
 import type { RunRecord } from '../lib/api'
@@ -121,12 +122,16 @@ export function RunStatusCard({
   run,
   startError,
   launching,
+  onRetry,
+  retrying,
 }: {
   title: string
   instanceState: string
   run?: RunRecord
   startError?: string | null
   launching?: boolean
+  onRetry?: (run: RunRecord) => void
+  retrying?: boolean
 }) {
   const createdAt = run ? formatCreatedAt(run.createdAt) : null
   const [nowMs, setNowMs] = useState(() => Date.now())
@@ -147,14 +152,29 @@ export function RunStatusCard({
     : null
   const performance = run?.performance ?? (run ? fallbackPerformance(run) : undefined)
   const phaseDurations = performance?.phaseDurationsMs as NonNullable<NonNullable<RunRecord['performance']>['phaseDurationsMs']> | undefined
+  const canRetry = run?.status === 'FAILED' && Boolean(onRetry)
 
   return (
     <GlowCard className="h-full">
-      <div className="mb-2 flex items-center gap-2">
-        <h4 className="text-xs font-bold uppercase tracking-widest text-cyan-700 dark:text-cyan-300">{title}</h4>
-        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${getInstanceStateBadgeClasses(instanceState)}`}>
-          {instanceState}
-        </span>
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <h4 className="text-xs font-bold uppercase tracking-widest text-cyan-700 dark:text-cyan-300">{title}</h4>
+          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${getInstanceStateBadgeClasses(instanceState)}`}>
+            {instanceState}
+          </span>
+        </div>
+        {canRetry ? (
+          <button
+            type="button"
+            aria-label={`Retry ${title} run`}
+            title="Retry failed run"
+            disabled={retrying}
+            onClick={() => onRetry?.(run)}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-600 shadow-sm transition hover:border-cyan-400 hover:text-cyan-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-cyan-400/60 dark:hover:text-cyan-200"
+          >
+            {retrying ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+          </button>
+        ) : null}
       </div>
       {startError ? (
         <div className="mb-2 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:border-red-400/50 dark:bg-red-900/30 dark:text-red-200">

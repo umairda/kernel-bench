@@ -20,7 +20,7 @@ import { ChevronDown, GripVertical, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { benchmarkLabel, formatBenchmarkParams } from '../benchmarks/benchmarkRegistry'
 import type { RunRecord, Runner } from '../lib/api'
-import { useDeleteQueuedRunMutation, useReorderQueuedRunsMutation } from '../lib/api'
+import { useDeleteQueuedRunMutation, useReorderQueuedRunsMutation, useStartRunMutation } from '../lib/api'
 import { RunStatusCard } from './RunStatusCard'
 import { GlowCard } from './aceternity/glow-card'
 
@@ -289,8 +289,10 @@ export function InProgressRunsCard({
   const [openRunIds, setOpenRunIds] = useState<Set<string>>(() => new Set(firstRunIds))
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [reorderError, setReorderError] = useState<string | null>(null)
+  const [retryingRunId, setRetryingRunId] = useState<string | null>(null)
   const deleteQueuedRun = useDeleteQueuedRunMutation()
   const reorderQueuedRuns = useReorderQueuedRunsMutation()
+  const retryRun = useStartRunMutation()
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -346,6 +348,19 @@ export function InProgressRunsCard({
       await reorderQueuedRuns.mutateAsync(reordered.map((run) => run.runId))
     } catch (error) {
       setReorderError(String(error))
+    }
+  }
+
+  const handleRetry = async (run: RunRecord) => {
+    setRetryingRunId(run.runId)
+    try {
+      await retryRun.mutateAsync({
+        runner: run.runner,
+        benchmark: run.benchmark,
+        params: run.params,
+      })
+    } finally {
+      setRetryingRunId(null)
     }
   }
 
@@ -432,6 +447,8 @@ export function InProgressRunsCard({
                 title={`${run.runner.toUpperCase()} ${benchmarkLabel(run.benchmark)}`}
                 instanceState={run.runner === 'cpu' ? cpuState : gpuState}
                 run={run}
+                onRetry={(failedRun) => void handleRetry(failedRun)}
+                retrying={retryRun.isPending && retryingRunId === run.runId}
               />
             ))}
           </div>
