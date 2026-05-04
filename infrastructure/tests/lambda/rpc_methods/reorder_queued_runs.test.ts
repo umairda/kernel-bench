@@ -56,4 +56,28 @@ describe('rpc_methods/reorder_queued_runs', () => {
       message: 'only queued runs can be reordered',
     })
   })
+
+  it('rejects mixed runner queues', async () => {
+    const ddb = { send: vi.fn() }
+    const runs: Record<string, any> = {
+      'cpu-run': { runId: 'cpu-run', runner: 'cpu', status: 'QUEUED', queuedAt: '2026-05-03T10:00:00.000Z' },
+      'gpu-run': { runId: 'gpu-run', runner: 'gpu', status: 'QUEUED', queuedAt: '2026-05-03T10:01:00.000Z' },
+    }
+    ddb.send.mockImplementation(async (command: any) => {
+      if (command.constructor.name === 'GetCommand') {
+        return { Item: runs[command.input.Key.runId] }
+      }
+      return {}
+    })
+    vi.doMock('../../../lambda/aws', async () => {
+      const actual = await vi.importActual<any>('../../../lambda/aws')
+      return { ...actual, ddb }
+    })
+
+    const { rpcReorderQueuedRuns } = await import('../../../lambda/rpc_methods/reorder_queued_runs')
+    await expect(rpcReorderQueuedRuns({ runIds: ['cpu-run', 'gpu-run'] })).rejects.toMatchObject({
+      code: -32012,
+      message: 'queued runs must belong to the same runner queue',
+    })
+  })
 })

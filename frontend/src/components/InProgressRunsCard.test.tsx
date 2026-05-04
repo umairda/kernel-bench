@@ -5,13 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RunRecord } from '../lib/api'
 import { InProgressRunsCard } from './InProgressRunsCard'
 
-function renderWithClient(items: RunRecord[]) {
+function renderWithClient(items: RunRecord[], completedItems: RunRecord[] = []) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
     <QueryClientProvider client={queryClient}>
-      <InProgressRunsCard items={items} />
+      <InProgressRunsCard items={items} completedItems={completedItems} cpuState="stopped" gpuState="running" />
     </QueryClientProvider>,
   )
 }
@@ -40,12 +40,45 @@ describe('InProgressRunsCard', () => {
       run({ runId: 'run-1', queuedAt: '2026-05-03T10:00:00Z' }),
     ])
 
-    expect(screen.getByText('Queued Runs')).toBeInTheDocument()
+    expect(screen.getByText('Queued CPU Runs')).toBeInTheDocument()
+    expect(screen.getByText('Queued GPU Runs')).toBeInTheDocument()
     expect(screen.getByText('2 queued runs')).toBeInTheDocument()
+    expect(screen.getByText('0 queued runs')).toBeInTheDocument()
     expect(screen.getByText('Priority 1: CPU Vector')).toBeInTheDocument()
     expect(screen.getByText('Priority 2: CPU Vector')).toBeInTheDocument()
     expect(screen.getByText('run-1')).toBeInTheDocument()
     expect(screen.queryByText('run-2')).not.toBeInTheDocument()
+  })
+
+  it('splits CPU and GPU queues independently', () => {
+    renderWithClient([
+      run({ runId: 'cpu-run', runner: 'cpu', queuedAt: '2026-05-03T10:00:00Z' }),
+      run({ runId: 'gpu-run', runner: 'gpu', queuedAt: '2026-05-03T10:00:00Z' }),
+    ])
+
+    expect(screen.getByText('Queued CPU Runs')).toBeInTheDocument()
+    expect(screen.getByText('Queued GPU Runs')).toBeInTheDocument()
+    expect(screen.getByText('Priority 1: CPU Vector')).toBeInTheDocument()
+    expect(screen.getByText('Priority 1: GPU Vector')).toBeInTheDocument()
+  })
+
+  it('shows completed runs with run status cards', () => {
+    renderWithClient([], [
+      run({
+        runId: 'completed-run',
+        status: 'COMPLETED',
+        runner: 'gpu',
+        queuedAt: undefined,
+        completedAt: '2026-05-03T10:02:00Z',
+        performance: { totalDurationMs: 1200, phaseDurationsMs: {}, operationDurations: [] },
+      }),
+    ])
+
+    expect(screen.getByText('Completed Runs')).toBeInTheDocument()
+    expect(screen.getByText('completed-run')).toBeInTheDocument()
+    expect(screen.getByText('Status:', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText('Parameters:', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText('Total Duration: 1.2 s')).toBeInTheDocument()
   })
 
   it('allows multiple run details to be open at the same time', async () => {

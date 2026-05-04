@@ -45,6 +45,10 @@ export async function rpcReorderQueuedRuns(rawParams: unknown) {
     }
     foundItems.push(item)
   }
+  const runners = new Set(foundItems.map((item) => item.runner))
+  if (runners.size !== 1) {
+    throw new JsonRpcError(-32012, 'queued runs must belong to the same runner queue', { runIds })
+  }
 
   const firstQueuedAt = foundItems
     .map(priorityTimestamp)

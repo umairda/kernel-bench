@@ -347,7 +347,12 @@ function App() {
         />
       ) : null}
 
-      <InProgressRunsCard items={inProgressRuns.data?.items ?? []} />
+      <InProgressRunsCard
+        items={inProgressRuns.data?.items ?? []}
+        completedItems={runHistory.data?.items ?? []}
+        cpuState={cpuState}
+        gpuState={gpuState}
+      />
     </div>
   )
 

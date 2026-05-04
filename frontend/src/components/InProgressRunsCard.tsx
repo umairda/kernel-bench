@@ -19,8 +19,9 @@ import { CSS } from '@dnd-kit/utilities'
 import { ChevronDown, GripVertical, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { benchmarkLabel, formatBenchmarkParams } from '../benchmarks/benchmarkRegistry'
-import type { RunRecord } from '../lib/api'
+import type { RunRecord, Runner } from '../lib/api'
 import { useDeleteQueuedRunMutation, useReorderQueuedRunsMutation } from '../lib/api'
+import { RunStatusCard } from './RunStatusCard'
 import { GlowCard } from './aceternity/glow-card'
 
 function priorityTimestamp(run: RunRecord) {
@@ -32,6 +33,19 @@ function sortByQueuePriority(items: RunRecord[]) {
     const byTime = priorityTimestamp(a).localeCompare(priorityTimestamp(b))
     return byTime !== 0 ? byTime : a.runId.localeCompare(b.runId)
   })
+}
+
+function sortByCompletion(items: RunRecord[]) {
+  return [...items].sort((a, b) => {
+    const aTime = String(a.completedAt ?? a.updatedAt ?? a.createdAt ?? '')
+    const bTime = String(b.completedAt ?? b.updatedAt ?? b.createdAt ?? '')
+    const byTime = bTime.localeCompare(aTime)
+    return byTime !== 0 ? byTime : a.runId.localeCompare(b.runId)
+  })
+}
+
+function isTerminalRun(run: RunRecord) {
+  return run.status === 'COMPLETED' || run.status === 'FAILED' || run.status === 'CANCELLED'
 }
 
 function formatDateTime(value?: string) {
@@ -182,10 +196,23 @@ function SortableQueuedRun({
   )
 }
 
-export function InProgressRunsCard({ items }: { items: RunRecord[] }) {
-  const orderedItems = useMemo(() => sortByQueuePriority(items.filter((item) => item.status === 'QUEUED')), [items])
-  const firstRunId = orderedItems[0]?.runId
-  const [openRunIds, setOpenRunIds] = useState<Set<string>>(() => new Set(firstRunId ? [firstRunId] : []))
+export function InProgressRunsCard({
+  items,
+  completedItems = [],
+  cpuState = 'unknown',
+  gpuState = 'unknown',
+}: {
+  items: RunRecord[]
+  completedItems?: RunRecord[]
+  cpuState?: string
+  gpuState?: string
+}) {
+  const orderedCpuItems = useMemo(() => sortByQueuePriority(items.filter((item) => item.status === 'QUEUED' && item.runner === 'cpu')), [items])
+  const orderedGpuItems = useMemo(() => sortByQueuePriority(items.filter((item) => item.status === 'QUEUED' && item.runner === 'gpu')), [items])
+  const orderedItems = useMemo(() => [...orderedCpuItems, ...orderedGpuItems], [orderedCpuItems, orderedGpuItems])
+  const completedRuns = useMemo(() => sortByCompletion(completedItems.filter(isTerminalRun)).slice(0, 6), [completedItems])
+  const firstRunIds = useMemo(() => [orderedCpuItems[0]?.runId, orderedGpuItems[0]?.runId].filter((runId): runId is string => Boolean(runId)), [orderedCpuItems, orderedGpuItems])
+  const [openRunIds, setOpenRunIds] = useState<Set<string>>(() => new Set(firstRunIds))
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [reorderError, setReorderError] = useState<string | null>(null)
   const deleteQueuedRun = useDeleteQueuedRunMutation()
@@ -194,19 +221,17 @@ export function InProgressRunsCard({ items }: { items: RunRecord[] }) {
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
-  const count = orderedItems.length
-  const badgeLabel = `${count} queued ${count === 1 ? 'run' : 'runs'}`
 
   useEffect(() => {
     setOpenRunIds((current) => {
       const currentIds = new Set(orderedItems.map((item) => item.runId))
       const next = new Set([...current].filter((runId) => currentIds.has(runId)))
-      if (firstRunId) {
-        next.add(firstRunId)
+      for (const runId of firstRunIds) {
+        next.add(runId)
       }
       return next
     })
-  }, [firstRunId, orderedItems])
+  }, [firstRunIds, orderedItems])
 
   const toggleRun = (runId: string) => {
     setOpenRunIds((current) => {
@@ -229,19 +254,19 @@ export function InProgressRunsCard({ items }: { items: RunRecord[] }) {
     }
   }
 
-  const handleDragEnd = async (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent, queueItems: RunRecord[]) => {
     const { active, over } = event
     if (!over || active.id === over.id) {
       return
     }
 
-    const oldIndex = orderedItems.findIndex((item) => item.runId === active.id)
-    const newIndex = orderedItems.findIndex((item) => item.runId === over.id)
+    const oldIndex = queueItems.findIndex((item) => item.runId === active.id)
+    const newIndex = queueItems.findIndex((item) => item.runId === over.id)
     if (oldIndex < 0 || newIndex < 0) {
       return
     }
 
-    const reordered = arrayMove(orderedItems, oldIndex, newIndex)
+    const reordered = arrayMove(queueItems, oldIndex, newIndex)
     try {
       setReorderError(null)
       await reorderQueuedRuns.mutateAsync(reordered.map((run) => run.runId))
@@ -250,49 +275,79 @@ export function InProgressRunsCard({ items }: { items: RunRecord[] }) {
     }
   }
 
-  return (
-    <GlowCard>
-      <div className="flex items-center justify-between gap-4">
-        <span className="flex items-center gap-3">
-          <span className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Queued Runs</span>
+  const renderQueueSection = (runner: Runner, queueItems: RunRecord[]) => {
+    const title = runner === 'cpu' ? 'Queued CPU Runs' : 'Queued GPU Runs'
+    const badge = `${queueItems.length} queued ${queueItems.length === 1 ? 'run' : 'runs'}`
+
+    return (
+      <GlowCard>
+        <div className="flex items-center justify-between gap-4">
+          <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{title}</h3>
           <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-800 dark:border-cyan-300/20 dark:bg-cyan-300/10 dark:text-cyan-200">
-            {badgeLabel}
+            {badge}
           </span>
-        </span>
-      </div>
-
-      {deleteError ? (
-        <div className="mt-3 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:border-red-400/50 dark:bg-red-900/30 dark:text-red-200">
-          {deleteError}
         </div>
-      ) : null}
-      {reorderError ? (
-        <div className="mt-3 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:border-red-400/50 dark:bg-red-900/30 dark:text-red-200">
-          {reorderError}
-        </div>
-      ) : null}
+        {deleteError ? (
+          <div className="mt-3 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:border-red-400/50 dark:bg-red-900/30 dark:text-red-200">
+            {deleteError}
+          </div>
+        ) : null}
+        {reorderError ? (
+          <div className="mt-3 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:border-red-400/50 dark:bg-red-900/30 dark:text-red-200">
+            {reorderError}
+          </div>
+        ) : null}
+        {queueItems.length === 0 ? (
+          <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">No queued {runner.toUpperCase()} runs.</p>
+        ) : (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(event) => void handleDragEnd(event, queueItems)}>
+            <SortableContext items={queueItems.map((run) => run.runId)} strategy={verticalListSortingStrategy}>
+              <div className="mt-4 space-y-3">
+                {queueItems.map((run, index) => (
+                  <SortableQueuedRun
+                    key={run.runId}
+                    run={run}
+                    index={index}
+                    isOpen={openRunIds.has(run.runId)}
+                    isDeleting={deleteQueuedRun.isPending && deleteQueuedRun.variables === run.runId}
+                    onToggle={toggleRun}
+                    onDelete={(runId) => void handleDelete(runId)}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+        )}
+      </GlowCard>
+    )
+  }
 
-      {orderedItems.length === 0 ? (
-        <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">No queued runs.</p>
-      ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(event) => void handleDragEnd(event)}>
-          <SortableContext items={orderedItems.map((run) => run.runId)} strategy={verticalListSortingStrategy}>
-            <div className="mt-4 space-y-3">
-              {orderedItems.map((run, index) => (
-                <SortableQueuedRun
-                  key={run.runId}
-                  run={run}
-                  index={index}
-                  isOpen={openRunIds.has(run.runId)}
-                  isDeleting={deleteQueuedRun.isPending && deleteQueuedRun.variables === run.runId}
-                  onToggle={toggleRun}
-                  onDelete={(runId) => void handleDelete(runId)}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
-      )}
-    </GlowCard>
+  return (
+    <>
+      {renderQueueSection('cpu', orderedCpuItems)}
+      {renderQueueSection('gpu', orderedGpuItems)}
+      <GlowCard>
+        <div className="flex items-center justify-between gap-4">
+          <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Completed Runs</h3>
+          <span className="rounded-full border border-zinc-300 bg-zinc-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-700 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300">
+            {completedRuns.length} finished
+          </span>
+        </div>
+        {completedRuns.length === 0 ? (
+          <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">No completed runs yet.</p>
+        ) : (
+          <div className="mt-4 space-y-4">
+            {completedRuns.map((run) => (
+              <RunStatusCard
+                key={run.runId}
+                title={`${run.runner.toUpperCase()} ${benchmarkLabel(run.benchmark)}`}
+                instanceState={run.runner === 'cpu' ? cpuState : gpuState}
+                run={run}
+              />
+            ))}
+          </div>
+        )}
+      </GlowCard>
+    </>
   )
 }
