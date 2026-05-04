@@ -36,6 +36,17 @@ export class KernelBenchStack extends cdk.Stack {
 
     const account = cdk.Stack.of(this).account;
     const region = cdk.Stack.of(this).region;
+    const runWorkflowStateMachineName = `KernelBench-run-workflow-${region}`;
+    const runWorkflowStateMachineArn = cdk.Stack.of(this).formatArn({
+      service: 'states',
+      resource: 'stateMachine',
+      resourceName: runWorkflowStateMachineName,
+    });
+    const runWorkflowExecutionArn = cdk.Stack.of(this).formatArn({
+      service: 'states',
+      resource: 'execution',
+      resourceName: `${runWorkflowStateMachineName}:*`,
+    });
     const ssmOutputLogGroup = new logs.LogGroup(this, 'KernelBench-SsmOutputLogGroup', {
       logGroupName: '/kernelbench/ssm-output',
       retention: logs.RetentionDays.ONE_WEEK,
@@ -258,6 +269,7 @@ export class KernelBenchStack extends cdk.Stack {
         SOURCE_ARCHIVE_KEY: props.sourceArchiveKey,
         BASE_COMMAND_TIMEOUT_SECONDS: String(90 * 60),
         MAX_COMMAND_TIMEOUT_SECONDS: String(6 * 60 * 60),
+        RUN_WORKFLOW_STATE_MACHINE_ARN: runWorkflowStateMachineArn,
         SSM_OUTPUT_LOG_GROUP: ssmOutputLogGroup.logGroupName,
       },
     });
@@ -274,6 +286,7 @@ export class KernelBenchStack extends cdk.Stack {
         IDLE_INSTANCE_MINUTES: '10',
         CPU_INSTANCE_ID: cpuRunner.instanceId,
         GPU_INSTANCE_ID: gpuRunner.instanceId,
+        RUN_WORKFLOW_STATE_MACHINE_ARN: runWorkflowStateMachineArn,
       },
     });
 
@@ -296,6 +309,7 @@ export class KernelBenchStack extends cdk.Stack {
         ORIGIN_VERIFY_SECRET: originVerifySecret.valueAsString,
         RUNNER_LOCK_TTL_SECONDS: '7200',
         STARTING_STALE_SECONDS: '900',
+        RUN_WORKFLOW_STATE_MACHINE_ARN: runWorkflowStateMachineArn,
         SSM_OUTPUT_LOG_GROUP: ssmOutputLogGroup.logGroupName,
       },
     });
@@ -325,6 +339,12 @@ export class KernelBenchStack extends cdk.Stack {
         resources: ['*'],
       }),
     );
+    runWorkflowStepFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['states:StartExecution'],
+        resources: [runWorkflowStateMachineArn],
+      }),
+    );
     ssmOutputLogGroup.grantRead(runWorkflowStepFn);
     artifactBucket.grantRead(runWorkflowStepFn);
 
@@ -340,11 +360,29 @@ export class KernelBenchStack extends cdk.Stack {
         resources: ['*'],
       }),
     );
+    rpcFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['states:StartExecution', 'states:DescribeExecution'],
+        resources: [runWorkflowStateMachineArn, runWorkflowExecutionArn],
+      }),
+    );
+    rpcFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['states:StopExecution'],
+        resources: [runWorkflowExecutionArn],
+      }),
+    );
     ssmOutputLogGroup.grantRead(rpcFn);
     sweepStaleRunsFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['ec2:StopInstances', 'ec2:DescribeInstances', 'ssm:ListCommandInvocations'],
         resources: ['*'],
+      }),
+    );
+    sweepStaleRunsFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['states:StartExecution'],
+        resources: [runWorkflowStateMachineArn],
       }),
     );
     const startAndWaitTask = new sfnTasks.LambdaInvoke(this, 'KernelBench-StartAndWaitTask', {
@@ -434,24 +472,10 @@ export class KernelBenchStack extends cdk.Stack {
       .next(waitForPoll);
 
     const runWorkflowStateMachine = new sfn.StateMachine(this, 'KernelBench-RunWorkflowStateMachine', {
-      stateMachineName: `KernelBench-run-workflow-${region}`,
+      stateMachineName: runWorkflowStateMachineName,
       definitionBody: sfn.DefinitionBody.fromChainable(workflowDefinition),
       timeout: cdk.Duration.hours(7),
     });
-
-    rpcFn.addEnvironment('RUN_WORKFLOW_STATE_MACHINE_ARN', runWorkflowStateMachine.stateMachineArn);
-    runWorkflowStepFn.addEnvironment('RUN_WORKFLOW_STATE_MACHINE_ARN', runWorkflowStateMachine.stateMachineArn);
-    sweepStaleRunsFn.addEnvironment('RUN_WORKFLOW_STATE_MACHINE_ARN', runWorkflowStateMachine.stateMachineArn);
-    runWorkflowStateMachine.grantStartExecution(rpcFn);
-    runWorkflowStateMachine.grantStartExecution(runWorkflowStepFn);
-    runWorkflowStateMachine.grantStartExecution(sweepStaleRunsFn);
-    runWorkflowStateMachine.grantRead(rpcFn);
-    rpcFn.addToRolePolicy(
-      new iam.PolicyStatement({
-        actions: ['states:StopExecution'],
-        resources: [`arn:aws:states:${region}:${account}:execution:KernelBench-run-workflow-${region}:*`],
-      }),
-    );
 
     new events.Rule(this, 'KernelBench-StaleRunSweepRule', {
       schedule: events.Schedule.rate(cdk.Duration.minutes(10)),
