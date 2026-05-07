@@ -77,6 +77,7 @@ describe('RunHistoryView', () => {
         benchmark: 'vector',
         runner: 'cpu',
         params: { vectorLength: 128 },
+        reason: 'WORKFLOW_STEP_EXCEPTION',
         performance: {
           operationDurations: [
             { name: 'add', durationMs: 400 },
@@ -98,6 +99,7 @@ describe('RunHistoryView', () => {
     expect(screen.getByText('600 ms')).toBeInTheDocument()
     expect(screen.getByText('1.1min')).toBeInTheDocument()
     expect(screen.getByText('Failed')).toBeInTheDocument()
+    expect(screen.getByText('WORKFLOW_STEP_EXCEPTION')).toBeInTheDocument()
     expect(screen.getByText('Success')).toBeInTheDocument()
     expect(screen.getByText('n=128')).toBeInTheDocument()
     expect(screen.getByText('64x64 * 64x64')).toBeInTheDocument()

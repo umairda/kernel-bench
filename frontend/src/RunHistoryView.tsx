@@ -15,6 +15,13 @@ function resultLabel(status: RunHistoryRow['status']) {
   return status === 'COMPLETED' ? 'Success' : 'Failed'
 }
 
+function resultReason(row: RunHistoryRow) {
+  if (row.status === 'COMPLETED') {
+    return null
+  }
+  return row.error || row.reason || 'No error reason recorded'
+}
+
 function totalOperationDuration(run: RunHistoryRow) {
   const ops = run.performance?.operationDurations ?? []
   if (ops.length > 0) {
@@ -208,8 +215,18 @@ export default function RunHistoryView() {
                   <td className="px-3 py-3 text-zinc-700 dark:text-zinc-200">{formatDuration(totalOperationDuration(row))}</td>
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-2">
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-rose-500/10 text-rose-700 dark:text-rose-300'}`}>
-                        {resultLabel(row.status)}
+                      <span className="group relative inline-flex">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-rose-500/10 text-rose-700 dark:text-rose-300'}`}
+                          title={resultReason(row) ?? undefined}
+                        >
+                          {resultLabel(row.status)}
+                        </span>
+                        {resultReason(row) ? (
+                          <span className="pointer-events-none absolute right-0 top-full z-20 mt-2 hidden w-64 rounded-xl border border-white/10 bg-zinc-950 px-3 py-2 text-xs font-medium normal-case tracking-normal text-zinc-100 shadow-xl group-hover:block">
+                            {resultReason(row)}
+                          </span>
+                        ) : null}
                       </span>
                       {row.status === 'FAILED' ? (
                         <button
