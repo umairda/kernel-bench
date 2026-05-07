@@ -149,6 +149,9 @@ export function publicRunView(item: Record<string, any>): Record<string, any> {
   }
   if (item.reason) out.reason = item.reason
   if (item.error) out.error = item.error
+  if (item.failureDiagnostics && typeof item.failureDiagnostics === 'object') {
+    out.failureDiagnostics = item.failureDiagnostics
+  }
   if (item.startupProgress && typeof item.startupProgress === 'object') {
     out.startupProgress = item.startupProgress
   }

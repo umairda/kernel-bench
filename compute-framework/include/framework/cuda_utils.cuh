@@ -17,6 +17,7 @@ struct DeviceInfo
 };
 
 StatusCode to_status_code(cudaError_t err);
+void report_cuda_error(cudaError_t err, const char *phase);
 StatusCode check_last_error();
 StatusCode synchronize_device();
 

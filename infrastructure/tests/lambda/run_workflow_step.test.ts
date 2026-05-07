@@ -151,4 +151,52 @@ describe('run_workflow_step', () => {
     } as any, {} as any)
     expect(out.status).toBe('FAILED')
   })
+
+  it('FINALIZE promotes failure diagnostics from S3', async () => {
+    const aws = makeAwsMocks()
+    aws.ddb.send.mockResolvedValue({})
+    aws.ec2.send.mockResolvedValue({})
+    aws.ssm.send.mockResolvedValue({
+      Status: 'Failed',
+      ResponseCode: 1,
+      StandardOutputContent: '',
+    })
+    aws.s3.send.mockImplementation(async (command: any) => {
+      if (command.input.Key.endsWith('failure_diagnostics.json')) {
+        return {
+          Body: {
+            transformToString: async () => JSON.stringify({
+              classification: 'HOST_OOM_KILLED',
+              returnCode: -9,
+              signalName: 'SIGKILL',
+              cgroup: { available: true, memoryPeakBytes: 123456789, oomKillDelta: 1 },
+              gpuMemory: { available: true, peakUsedMiB: 1234, totalMiB: 49140 },
+            }),
+          },
+        }
+      }
+      throw new Error('not found')
+    })
+    vi.doMock('../../lambda/aws', () => aws)
+
+    const { handler } = await import('../../lambda/instance_actions/run_workflow_step')
+    const out = await handler({
+      action: 'FINALIZE',
+      runId: 'r1',
+      runner: 'gpu',
+      benchmark: 'convolution',
+      params: { inputN: 1 },
+      instanceId: 'i-gpu',
+      s3Prefix: 'x/',
+      createdAt: '2026-01-01T00:00:00Z',
+      commandId: 'cmd-1',
+      poll: { isTerminal: true, mappedStatus: 'FAILED', ssmStatus: 'Failed', responseCode: 1 },
+    } as any, {} as any)
+
+    const update = aws.ddb.send.mock.calls.find((call) => String(call[0].input?.UpdateExpression ?? '').includes('failureDiagnostics'))?.[0].input
+    expect(out.status).toBe('FAILED')
+    expect(update.ExpressionAttributeValues[':reason']).toBe('HOST_OOM_KILLED')
+    expect(update.ExpressionAttributeValues[':failureDiagnostics'].classification).toBe('HOST_OOM_KILLED')
+    expect(update.ExpressionAttributeValues[':error']).toContain('SIGKILL')
+  })
 })

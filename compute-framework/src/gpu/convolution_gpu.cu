@@ -166,12 +166,14 @@ StatusCode gpu_convolution_op(
     cudaError_t err = cudaMalloc(reinterpret_cast<void **>(&d_input), input_bytes);
     if (err != cudaSuccess)
     {
+        cuda_utils::report_cuda_error(err, "alloc-d_input");
         return cuda_utils::to_status_code(err);
     }
 
     err = cudaMalloc(reinterpret_cast<void **>(&d_filter), filter_bytes);
     if (err != cudaSuccess)
     {
+        cuda_utils::report_cuda_error(err, "alloc-d_filter");
         free_all();
         return cuda_utils::to_status_code(err);
     }
@@ -179,6 +181,7 @@ StatusCode gpu_convolution_op(
     err = cudaMalloc(reinterpret_cast<void **>(&d_out), out_bytes);
     if (err != cudaSuccess)
     {
+        cuda_utils::report_cuda_error(err, "alloc-d_out");
         free_all();
         return cuda_utils::to_status_code(err);
     }
@@ -186,6 +189,7 @@ StatusCode gpu_convolution_op(
     err = cudaMemcpy(d_input, input.data(), input_bytes, cudaMemcpyHostToDevice);
     if (err != cudaSuccess)
     {
+        cuda_utils::report_cuda_error(err, "copy-h2d-input");
         free_all();
         return cuda_utils::to_status_code(err);
     }
@@ -193,6 +197,7 @@ StatusCode gpu_convolution_op(
     err = cudaMemcpy(d_filter, filter.data(), filter_bytes, cudaMemcpyHostToDevice);
     if (err != cudaSuccess)
     {
+        cuda_utils::report_cuda_error(err, "copy-h2d-filter");
         free_all();
         return cuda_utils::to_status_code(err);
     }
@@ -236,6 +241,7 @@ StatusCode gpu_convolution_op(
     err = cudaMemcpy(out.data(), d_out, out_bytes, cudaMemcpyDeviceToHost);
     if (err != cudaSuccess)
     {
+        cuda_utils::report_cuda_error(err, "copy-d2h");
         free_all();
         return cuda_utils::to_status_code(err);
     }

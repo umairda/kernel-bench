@@ -41,5 +41,16 @@ describe('common', () => {
     const v = publicRunView({ runId: 'r', runner: 'cpu', benchmark: 'vector', params: {}, status: 'RUNNING', responseCode: 0 })
     expect(v.runId).toBe('r')
   })
-})
 
+  it('publicRunView includes structured failure diagnostics', () => {
+    const v = publicRunView({
+      runId: 'r',
+      runner: 'gpu',
+      benchmark: 'convolution',
+      params: {},
+      status: 'FAILED',
+      failureDiagnostics: { classification: 'HOST_OOM_KILLED' },
+    })
+    expect(v.failureDiagnostics).toEqual({ classification: 'HOST_OOM_KILLED' })
+  })
+})

@@ -351,6 +351,52 @@ async function attachPerformance(runId: string, s3Prefix: string): Promise<Recor
   }
 }
 
+async function fetchFailureDiagnostics(s3Prefix: string): Promise<Record<string, any> | undefined> {
+  try {
+    const obj = await s3.send(new GetObjectCommand({ Bucket: ARTIFACT_BUCKET_NAME, Key: `${s3Prefix}failure_diagnostics.json` }))
+    const txt = await obj.Body?.transformToString()
+    if (!txt) return undefined
+    const diagnostics = JSON.parse(txt)
+    return diagnostics && typeof diagnostics === 'object' ? diagnostics : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function reasonFromFailureDiagnostics(diagnostics: Record<string, any> | undefined, fallback: string): string {
+  const classification = diagnostics?.classification
+  return typeof classification === 'string' && classification.length > 0 ? classification : fallback
+}
+
+function errorFromFailureDiagnostics(diagnostics: Record<string, any> | undefined): string | undefined {
+  if (!diagnostics) return undefined
+  const parts: string[] = []
+  if (typeof diagnostics.signalName === 'string') {
+    parts.push(`Process terminated by ${diagnostics.signalName}`)
+  } else if (typeof diagnostics.returnCode === 'number') {
+    parts.push(`Benchmark exited with code ${diagnostics.returnCode}`)
+  }
+
+  const cudaError = Array.isArray(diagnostics.kernelBenchErrors)
+    ? diagnostics.kernelBenchErrors.find((entry: any) => entry && typeof entry === 'object' && typeof entry.detail === 'string')
+    : undefined
+  if (cudaError?.detail) {
+    parts.push(String(cudaError.detail))
+  }
+
+  const gpuMemory = diagnostics.gpuMemory
+  if (gpuMemory && typeof gpuMemory === 'object' && typeof gpuMemory.peakUsedMiB === 'number' && typeof gpuMemory.totalMiB === 'number') {
+    parts.push(`Peak GPU memory ${gpuMemory.peakUsedMiB} MiB / ${gpuMemory.totalMiB} MiB`)
+  }
+
+  const cgroup = diagnostics.cgroup
+  if (cgroup && typeof cgroup === 'object' && typeof cgroup.memoryPeakBytes === 'number') {
+    parts.push(`Peak host memory ${Math.round(cgroup.memoryPeakBytes / 1024 / 1024)} MiB`)
+  }
+
+  return parts.length > 0 ? parts.join('; ') : undefined
+}
+
 function buildFallbackPerformance(input: WorkflowInput, completedAt: string): Record<string, any> | undefined {
   const createdMs = new Date(input.createdAt).getTime()
   const completedMs = new Date(completedAt).getTime()
@@ -392,20 +438,33 @@ async function finalize(input: WorkflowInput) {
       terminalProgress = extractLatestProgress(inv.StandardOutputContent) ?? await extractLatestProgressFromLogs(input.commandId, input.instanceId)
     } catch {}
   }
+  const fallbackReason = reasonFromSsm(mapped, ssmStatus, responseCode)
+  const failureDiagnostics = mapped === 'FAILED' ? await fetchFailureDiagnostics(input.s3Prefix) : undefined
+  const diagnosticError = errorFromFailureDiagnostics(failureDiagnostics)
   const values: Record<string, any> = {
     ':status': mapped,
-    ':reason': reasonFromSsm(mapped, ssmStatus, responseCode),
+    ':reason': reasonFromFailureDiagnostics(failureDiagnostics, fallbackReason),
     ':ssmStatus': ssmStatus,
     ':responseCode': responseCode,
     ':completedAt': now,
     ':updatedAt': now,
   }
   let updateExpression = 'SET #status = :status, reason = :reason, ssmStatus = :ssmStatus, responseCode = :responseCode, completedAt = :completedAt, updatedAt = :updatedAt'
+  if (failureDiagnostics) {
+    updateExpression += ', failureDiagnostics = :failureDiagnostics'
+    values[':failureDiagnostics'] = failureDiagnostics
+  }
+  if (diagnosticError) {
+    updateExpression += ', #error = :error'
+    values[':error'] = diagnosticError
+  }
   if (terminalProgress) {
     updateExpression += ', progress = :progress'
     values[':progress'] = terminalProgress
   }
-  updateExpression += ' REMOVE #error'
+  if (!diagnosticError) {
+    updateExpression += ' REMOVE #error'
+  }
   await ddb.send(new UpdateCommand({
     TableName: RUNS_TABLE_NAME,
     Key: { runId: input.runId },

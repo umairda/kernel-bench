@@ -99,6 +99,49 @@ describe('RunStatusCard', () => {
     expect(screen.getByText(/removeUndefinedValues=true/)).toBeInTheDocument()
   })
 
+  it('shows structured failure diagnostics', () => {
+    render(
+      <RunStatusCard
+        title="GPU"
+        instanceState="stopped"
+        run={{
+          runId: 'run-failed-diagnostics',
+          status: 'FAILED',
+          benchmark: 'convolution',
+          runner: 'gpu',
+          params: {
+            inputN: 16,
+            inputC: 16,
+            inputH: 6400,
+            inputW: 2560,
+            filterOutC: 16,
+            filterH: 3,
+            filterW: 3,
+            strideH: 1,
+            strideW: 1,
+            padH: 1,
+            padW: 1,
+          },
+          reason: 'HOST_OOM_KILLED',
+          failureDiagnostics: {
+            classification: 'HOST_OOM_KILLED',
+            returnCode: -9,
+            signalName: 'SIGKILL',
+            wallDurationMs: 40609,
+            cgroup: { available: true, memoryPeakBytes: 34359738368, oomKillDelta: 1 },
+            gpuMemory: { available: true, peakUsedMiB: 48123, totalMiB: 49140, samples: 4 },
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Failure Diagnostics')).toBeInTheDocument()
+    expect(screen.getAllByText('HOST_OOM_KILLED').length).toBeGreaterThan(0)
+    expect(screen.getByText('SIGKILL')).toBeInTheDocument()
+    expect(screen.getByText('47.0 GiB / 48.0 GiB')).toBeInTheDocument()
+    expect(screen.getByText('32.0 GiB')).toBeInTheDocument()
+  })
+
   it('shows a retry button for failed runs', () => {
     const onRetry = vi.fn()
     const run = {

@@ -12,6 +12,26 @@
 
 namespace
 {
+int exit_code_for_status(const StatusCode status)
+{
+    switch (status)
+    {
+    case StatusCode::Success:
+        return 0;
+    case StatusCode::InvalidArgument:
+        return 2;
+    case StatusCode::OutOfMemory:
+        return 137;
+    case StatusCode::NotImplemented:
+        return 3;
+    case StatusCode::BackendUnavailable:
+    case StatusCode::BackendBusy:
+        return 4;
+    default:
+        return 1;
+    }
+}
+
 StatusCode run_vector(const ParsedArgs &args, std::vector<float> &out)
 {
     out.assign(args.a.size(), 0.0f);
@@ -42,7 +62,7 @@ StatusCode run_convolution(const ParsedArgs &args, std::vector<float> &out)
     return cpu_convolution_op(args.convolution_params, args.input, args.filter, out);
 }
 
-void run_main(int argc, char *argv[])
+int run_main(int argc, char *argv[])
 {
     const ParsedArgs args = parse_args(argc, argv);
     std::vector<float> out;
@@ -72,6 +92,15 @@ void run_main(int argc, char *argv[])
               << " total_ms=" << op_ms
               << " status=" << to_string(status)
               << std::endl;
+    if (status != StatusCode::Success)
+    {
+        std::cerr << "KERNEL_BENCH_ERROR "
+                  << "type=" << (status == StatusCode::OutOfMemory ? "BENCHMARK_OUT_OF_MEMORY" : "BENCHMARK_STATUS_FAILED")
+                  << " status=" << to_string(status)
+                  << " detail=\"benchmark returned non-success status\""
+                  << std::endl;
+    }
+    return exit_code_for_status(status);
 }
 } // namespace
 
@@ -79,8 +108,7 @@ int main(int argc, char *argv[])
 {
     try
     {
-        run_main(argc, argv);
-        return 0;
+        return run_main(argc, argv);
     }
     catch (const std::invalid_argument &e)
     {

@@ -42,6 +42,35 @@ export type RunRecord = {
   completedAt?: string
   reason?: string
   error?: string
+  failureDiagnostics?: {
+    classification?: string
+    returnCode?: number
+    signal?: number | null
+    signalName?: string | null
+    wallDurationMs?: number
+    cgroup?: {
+      available?: boolean
+      memoryPeakBytes?: number | null
+      oomDelta?: number
+      oomKillDelta?: number
+      error?: string | null
+    }
+    gpuMemory?: {
+      available?: boolean
+      peakUsedMiB?: number | null
+      totalMiB?: number | null
+      samples?: number
+      error?: string | null
+    }
+    kernelBenchErrors?: Array<{
+      type?: string
+      phase?: string
+      cudaCode?: string
+      cudaName?: string
+      detail?: string
+      [key: string]: unknown
+    }>
+  }
   responseCode?: number
   ssmStatus?: string
   ssmTimeoutSeconds?: number

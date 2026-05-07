@@ -97,12 +97,14 @@ StatusCode gpu_matmul_op(
     cudaError_t err = cudaMalloc(reinterpret_cast<void **>(&d_a), a_bytes);
     if (err != cudaSuccess)
     {
+        cuda_utils::report_cuda_error(err, "alloc-d_a");
         return cuda_utils::to_status_code(err);
     }
 
     err = cudaMalloc(reinterpret_cast<void **>(&d_b), b_bytes);
     if (err != cudaSuccess)
     {
+        cuda_utils::report_cuda_error(err, "alloc-d_b");
         free_all();
         return cuda_utils::to_status_code(err);
     }
@@ -110,6 +112,7 @@ StatusCode gpu_matmul_op(
     err = cudaMalloc(reinterpret_cast<void **>(&d_out), out_bytes);
     if (err != cudaSuccess)
     {
+        cuda_utils::report_cuda_error(err, "alloc-d_out");
         free_all();
         return cuda_utils::to_status_code(err);
     }
@@ -120,6 +123,7 @@ StatusCode gpu_matmul_op(
     err = cudaMemcpy(d_a, a.data(), a_bytes, cudaMemcpyHostToDevice);
     if (err != cudaSuccess)
     {
+        cuda_utils::report_cuda_error(err, "copy-h2d-a");
         free_all();
         return cuda_utils::to_status_code(err);
     }
@@ -127,6 +131,7 @@ StatusCode gpu_matmul_op(
     err = cudaMemcpy(d_b, b.data(), b_bytes, cudaMemcpyHostToDevice);
     if (err != cudaSuccess)
     {
+        cuda_utils::report_cuda_error(err, "copy-h2d-b");
         free_all();
         return cuda_utils::to_status_code(err);
     }
@@ -165,6 +170,7 @@ StatusCode gpu_matmul_op(
     err = cudaMemcpy(out.data(), d_out, out_bytes, cudaMemcpyDeviceToHost);
     if (err != cudaSuccess)
     {
+        cuda_utils::report_cuda_error(err, "copy-d2h");
         free_all();
         return cuda_utils::to_status_code(err);
     }

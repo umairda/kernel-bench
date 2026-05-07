@@ -3,7 +3,24 @@ set -euo pipefail
 
 PS4='+ [${BASH_SOURCE##*/}:${LINENO}] '
 set -x
-trap 'rc=$?; echo "[ERROR] command failed (rc=${rc}) at line ${LINENO}: ${BASH_COMMAND}" >&2; exit ${rc}' ERR
+
+upload_partial_results_on_error() {
+  local rc="$1"
+  local line="$2"
+  local command="$3"
+  echo "[ERROR] command failed (rc=${rc}) at line ${line}: ${command}" >&2
+  if [[ -n "${RESULTS_DIR:-}" && -d "${RESULTS_DIR}" ]]; then
+    cat > "${RESULTS_DIR}/shell_failure.json" <<JSON
+{"exitCode":${rc},"line":${line},"command":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "${command}" 2>/dev/null || printf '"unavailable"')}
+JSON
+    if command -v aws >/dev/null 2>&1 && [[ -n "${BUCKET_NAME:-}" && -n "${S3_PREFIX:-}" ]]; then
+      aws s3 cp "${RESULTS_DIR}" "s3://${BUCKET_NAME}/${S3_PREFIX}" --recursive >/dev/null 2>&1 || true
+    fi
+  fi
+  exit "${rc}"
+}
+
+trap 'upload_partial_results_on_error "$?" "${LINENO}" "${BASH_COMMAND}"' ERR
 
 RUNNER="$1"
 BENCHMARK="$2"
@@ -214,9 +231,13 @@ BUILD_SETUP_END_MS="$(now_ms)"
 BENCHMARK_PHASE_START_MS="$(now_ms)"
 python3 - <<'PY' "${RUNNER}" "${BENCHMARK}" "${PARAMS_FILE}" "${RESULTS_DIR}" "${RUN_ID}" "${COMPUTE_BIN}"
 import json
+import os
 import re
+import shutil
+import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -233,6 +254,140 @@ gpu_warmup_ms = None
 gpu_warmup_kernel_ms = None
 
 
+def read_int(path):
+    try:
+        return int(Path(path).read_text().strip())
+    except Exception:
+        return None
+
+
+def read_memory_events(path):
+    events_path = Path(path) / "memory.events"
+    try:
+        return {
+            key: int(value)
+            for key, value in (line.split() for line in events_path.read_text().splitlines() if line.strip())
+        }
+    except Exception:
+        return {}
+
+
+class CgroupDiagnostics:
+    def __init__(self, name):
+        self.root = Path("/sys/fs/cgroup")
+        self.path = self.root / name
+        self.available = False
+        self.before = {}
+        self.after = {}
+        self.memory_peak_bytes = None
+        self.error = None
+
+    def setup(self):
+        try:
+            if not (self.root / "cgroup.controllers").exists():
+                self.error = "cgroup-v2-unavailable"
+                return
+            self.path.mkdir(mode=0o755, exist_ok=False)
+            self.before = read_memory_events(self.path)
+            self.available = True
+        except Exception as exc:
+            self.error = str(exc)
+
+    def attach(self, pid):
+        if not self.available:
+            return
+        try:
+            (self.path / "cgroup.procs").write_text(str(pid))
+        except Exception as exc:
+            self.error = str(exc)
+
+    def finish(self):
+        if not self.available:
+            return
+        self.after = read_memory_events(self.path)
+        self.memory_peak_bytes = read_int(self.path / "memory.peak")
+        try:
+            self.path.rmdir()
+        except Exception:
+            pass
+
+    def summary(self):
+        oom_delta = max(0, self.after.get("oom", 0) - self.before.get("oom", 0))
+        oom_kill_delta = max(0, self.after.get("oom_kill", 0) - self.before.get("oom_kill", 0))
+        return {
+            "available": self.available,
+            "path": str(self.path) if self.available else None,
+            "error": self.error,
+            "memoryPeakBytes": self.memory_peak_bytes,
+            "memoryEventsBefore": self.before,
+            "memoryEventsAfter": self.after,
+            "oomDelta": oom_delta,
+            "oomKillDelta": oom_kill_delta,
+        }
+
+
+class GpuMemorySampler:
+    def __init__(self, enabled):
+        self.enabled = enabled and shutil.which("nvidia-smi") is not None
+        self.stop_event = threading.Event()
+        self.thread = None
+        self.peak_used_mib = None
+        self.total_mib = None
+        self.samples = 0
+        self.error = None
+
+    def start(self):
+        if not self.enabled:
+            return
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def _run(self):
+        while not self.stop_event.is_set():
+            try:
+                resp = subprocess.run(
+                    [
+                        "nvidia-smi",
+                        "--query-gpu=memory.used,memory.total",
+                        "--format=csv,noheader,nounits",
+                    ],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    timeout=2,
+                    check=False,
+                )
+                if resp.returncode == 0:
+                    for line in resp.stdout.splitlines():
+                        parts = [p.strip() for p in line.split(",")]
+                        if len(parts) < 2:
+                            continue
+                        used = int(parts[0])
+                        total = int(parts[1])
+                        self.peak_used_mib = used if self.peak_used_mib is None else max(self.peak_used_mib, used)
+                        self.total_mib = total if self.total_mib is None else max(self.total_mib, total)
+                        self.samples += 1
+            except Exception as exc:
+                self.error = str(exc)
+            self.stop_event.wait(1.0)
+
+    def stop(self):
+        if not self.enabled:
+            return
+        self.stop_event.set()
+        if self.thread:
+            self.thread.join(timeout=3)
+
+    def summary(self):
+        return {
+            "available": self.enabled,
+            "peakUsedMiB": self.peak_used_mib,
+            "totalMiB": self.total_mib,
+            "samples": self.samples,
+            "error": self.error,
+        }
+
+
 def parse_kernel_ms(output):
     metrics_line = None
     for line in output.splitlines():
@@ -245,17 +400,90 @@ def parse_kernel_ms(output):
     return float(match.group(1)) if match else None
 
 
-def run_command(argv):
+def parse_kernel_bench_errors(output):
+    errors = []
+    for line in output.splitlines():
+        if not line.startswith("KERNEL_BENCH_ERROR "):
+            continue
+        fields = {}
+        for match in re.finditer(r"([a-zA-Z_]+)=(\"[^\"]*\"|\S+)", line[len("KERNEL_BENCH_ERROR "):]):
+            value = match.group(2)
+            if value.startswith('"') and value.endswith('"'):
+                value = value[1:-1]
+            fields[match.group(1)] = value
+        if fields:
+            errors.append(fields)
+    return errors
+
+
+def classify_failure(returncode, output, cgroup_summary):
+    errors = parse_kernel_bench_errors(output)
+    if cgroup_summary.get("oomKillDelta", 0) > 0:
+        return "HOST_OOM_KILLED"
+    for err in reversed(errors):
+        if err.get("type") in {"CUDA_OUT_OF_MEMORY", "BENCHMARK_OUT_OF_MEMORY"}:
+            return "CUDA_OUT_OF_MEMORY" if err.get("type") == "CUDA_OUT_OF_MEMORY" else "BENCHMARK_OUT_OF_MEMORY"
+    for err in reversed(errors):
+        if err.get("type"):
+            return err["type"]
+    if returncode == -signal.SIGKILL:
+        return "PROCESS_SIGKILL_UNKNOWN"
+    if returncode == 137:
+        return "PROCESS_KILLED_OR_OOM"
+    return "BENCHMARK_EXIT_NONZERO"
+
+
+def write_failure_diagnostics(name, argv, returncode, output, wall_ms, cgroup, gpu_sampler):
+    cgroup_summary = cgroup.summary()
+    diagnostics = {
+        "name": name,
+        "operationType": name,
+        "runner": runner,
+        "benchmark": benchmark,
+        "runId": run_id,
+        "command": argv,
+        "returnCode": returncode,
+        "signal": -returncode if returncode < 0 else None,
+        "signalName": signal.Signals(-returncode).name if returncode < 0 and -returncode in [s.value for s in signal.Signals] else None,
+        "wallDurationMs": round(wall_ms, 3),
+        "classification": classify_failure(returncode, output, cgroup_summary),
+        "kernelBenchErrors": parse_kernel_bench_errors(output),
+        "cgroup": cgroup_summary,
+        "gpuMemory": gpu_sampler.summary(),
+        "tail": output.splitlines()[-40:],
+    }
+    (results_dir / "failure_diagnostics.json").write_text(json.dumps(diagnostics, indent=2))
+    print(
+        "KERNEL_BENCH_ERROR "
+        f"type={diagnostics['classification']} "
+        f"return_code={returncode} "
+        f"detail=\"benchmark command failed; see failure_diagnostics.json\"",
+        flush=True,
+    )
+    return diagnostics
+
+
+def run_command(name, argv):
     output_lines = []
+    cgroup = CgroupDiagnostics(f"kernelbench-{run_id}-{name}-{os.getpid()}".replace("/", "-"))
+    cgroup.setup()
+    gpu_sampler = GpuMemorySampler(runner == "gpu")
+    op_start = time.perf_counter()
     proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    cgroup.attach(proc.pid)
+    gpu_sampler.start()
     assert proc.stdout is not None
     for line in proc.stdout:
         print(line, end='', flush=True)
         output_lines.append(line)
     proc.wait()
+    gpu_sampler.stop()
+    cgroup.finish()
     output = ''.join(output_lines)
     if proc.returncode != 0:
-        raise subprocess.CalledProcessError(proc.returncode, argv, output=output)
+        wall_ms = (time.perf_counter() - op_start) * 1000.0
+        diagnostics = write_failure_diagnostics(name, argv, proc.returncode, output, wall_ms, cgroup, gpu_sampler)
+        raise subprocess.CalledProcessError(proc.returncode, argv, output=output) from RuntimeError(diagnostics["classification"])
     return output
 
 
@@ -272,7 +500,7 @@ def run_gpu_warmup():
         '--length', '1',
     ]
     op_start = time.perf_counter()
-    output = run_command(cmd)
+    output = run_command('gpu_warmup', cmd)
     wall_ms = (time.perf_counter() - op_start) * 1000.0
     (results_dir / "gpu_warmup.txt").write_text(output)
     return round(wall_ms, 3), parse_kernel_ms(output)
@@ -280,7 +508,7 @@ def run_gpu_warmup():
 
 def run_and_capture(name, argv, op_type=None):
     op_start = time.perf_counter()
-    output = run_command(argv)
+    output = run_command(name, argv)
     elapsed_ms = (time.perf_counter() - op_start) * 1000.0
     (results_dir / f"{name}.txt").write_text(output)
     measured_ms = elapsed_ms

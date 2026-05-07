@@ -24,6 +24,29 @@ function formatMilliseconds(value?: number | null) {
   return `${Math.round(value).toLocaleString()} ms`
 }
 
+function formatBytes(value?: number | null) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 'n/a'
+  }
+  if (value >= 1024 * 1024 * 1024) {
+    return `${(value / 1024 / 1024 / 1024).toFixed(1)} GiB`
+  }
+  if (value >= 1024 * 1024) {
+    return `${Math.round(value / 1024 / 1024).toLocaleString()} MiB`
+  }
+  return `${Math.round(value).toLocaleString()} B`
+}
+
+function formatMiB(value?: number | null) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 'n/a'
+  }
+  if (value >= 1024) {
+    return `${(value / 1024).toFixed(1)} GiB`
+  }
+  return `${Math.round(value).toLocaleString()} MiB`
+}
+
 function formatSeconds(value?: number | null) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
     return 'n/a'
@@ -195,6 +218,53 @@ export function RunStatusCard({
             <div className="rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:border-red-400/50 dark:bg-red-900/30 dark:text-red-200">
               {run.reason ? <p><span className="font-semibold">Reason:</span> {run.reason}</p> : null}
               {run.error ? <p className={run.reason ? 'mt-1' : ''}><span className="font-semibold">Error:</span> {run.error}</p> : null}
+            </div>
+          ) : null}
+          {run.failureDiagnostics ? (
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-400/40 dark:bg-amber-950/40 dark:text-amber-100">
+              <p className="font-semibold">Failure Diagnostics</p>
+              {run.failureDiagnostics.classification ? (
+                <p className="mt-1 flex items-center justify-between gap-3">
+                  <span>classification</span>
+                  <span>{run.failureDiagnostics.classification}</span>
+                </p>
+              ) : null}
+              {typeof run.failureDiagnostics.returnCode === 'number' ? (
+                <p className="flex items-center justify-between gap-3">
+                  <span>exit code</span>
+                  <span>{run.failureDiagnostics.returnCode}</span>
+                </p>
+              ) : null}
+              {run.failureDiagnostics.signalName ? (
+                <p className="flex items-center justify-between gap-3">
+                  <span>signal</span>
+                  <span>{run.failureDiagnostics.signalName}</span>
+                </p>
+              ) : null}
+              {typeof run.failureDiagnostics.wallDurationMs === 'number' ? (
+                <p className="flex items-center justify-between gap-3">
+                  <span>benchmark wall time</span>
+                  <span>{formatMilliseconds(run.failureDiagnostics.wallDurationMs)}</span>
+                </p>
+              ) : null}
+              {run.failureDiagnostics.gpuMemory?.available ? (
+                <p className="flex items-center justify-between gap-3">
+                  <span>peak GPU memory</span>
+                  <span>{formatMiB(run.failureDiagnostics.gpuMemory.peakUsedMiB)} / {formatMiB(run.failureDiagnostics.gpuMemory.totalMiB)}</span>
+                </p>
+              ) : null}
+              {run.failureDiagnostics.cgroup?.available ? (
+                <>
+                  <p className="flex items-center justify-between gap-3">
+                    <span>peak host memory</span>
+                    <span>{formatBytes(run.failureDiagnostics.cgroup.memoryPeakBytes)}</span>
+                  </p>
+                  <p className="flex items-center justify-between gap-3">
+                    <span>host OOM kills</span>
+                    <span>{run.failureDiagnostics.cgroup.oomKillDelta ?? 0}</span>
+                  </p>
+                </>
+              ) : null}
             </div>
           ) : null}
           <p>
