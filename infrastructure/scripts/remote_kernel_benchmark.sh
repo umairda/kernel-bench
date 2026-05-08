@@ -115,12 +115,50 @@ SOURCE_CACHE_BUILD_DIR="${SOURCE_CACHE_DIR}/build"
 PREBUILT_BIN="${BUNDLE_DIR}/prebuilt/${RUNNER}/compute"
 
 ensure_cmake() {
+  cmake_meets_minimum() {
+    local current
+    if ! command -v cmake >/dev/null 2>&1; then
+      return 1
+    fi
+
+    current="$(cmake --version | head -n1 | awk '{print $3}')"
+    [[ "$(printf '%s\n' "3.24.0" "${current}" | sort -V | head -n1)" == "3.24.0" ]]
+  }
+
+  install_pip_cmake() {
+    if ! command -v python3 >/dev/null 2>&1; then
+      echo "python3 is required to install a newer cmake fallback." >&2
+      exit 2
+    fi
+
+    if ! python3 -m pip --version >/dev/null 2>&1; then
+      if command -v dnf >/dev/null 2>&1; then
+        dnf install -y python3-pip
+      elif command -v apt-get >/dev/null 2>&1; then
+        DEBIAN_FRONTEND=noninteractive apt-get update -y
+        DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pip
+      fi
+    fi
+
+    # Amazon Linux 2023 ships CMake 3.22, below the project minimum. Install a
+    # newer CMake only when the OS package manager cannot satisfy the version.
+    if python3 -m pip install --upgrade "cmake>=3.24,<4"; then
+      hash -r || true
+      return 0
+    fi
+
+    python3 -m pip install --break-system-packages --upgrade "cmake>=3.24,<4"
+    hash -r || true
+  }
+
+  if cmake_meets_minimum; then
+    return 0
+  fi
+
   if command -v cmake >/dev/null 2>&1; then
     local current
     current="$(cmake --version | head -n1 | awk '{print $3}')"
-    if [[ "$(printf '%s\n' "3.24.0" "${current}" | sort -V | head -n1)" == "3.24.0" ]]; then
-      return 0
-    fi
+    echo "cmake ${current} is below required 3.24.0; attempting upgrade."
   fi
 
   if command -v dnf >/dev/null 2>&1; then
@@ -133,8 +171,13 @@ ensure_cmake() {
     exit 2
   fi
 
-  if ! command -v cmake >/dev/null 2>&1; then
-    echo "cmake is still unavailable after package installation." >&2
+  if ! cmake_meets_minimum; then
+    install_pip_cmake
+  fi
+
+  if ! cmake_meets_minimum; then
+    cmake --version >&2 || true
+    echo "cmake is unavailable or still below 3.24.0 after installation." >&2
     exit 2
   fi
 }
