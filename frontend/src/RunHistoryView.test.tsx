@@ -95,12 +95,12 @@ describe('RunHistoryView', () => {
 
     expect(within(firstBodyRow).getByText('run-newer')).toBeInTheDocument()
     expect(within(secondBodyRow).getByText('run-older')).toBeInTheDocument()
-    expect(screen.getByText('Matrix Multiplication')).toBeInTheDocument()
+    expect(within(secondBodyRow).getByText('Matrix Multiplication')).toBeInTheDocument()
     expect(screen.getByText('600 ms')).toBeInTheDocument()
     expect(screen.getByText('1.1min')).toBeInTheDocument()
-    expect(screen.getByText('Failed')).toBeInTheDocument()
+    expect(within(firstBodyRow).getByText('Failed')).toBeInTheDocument()
     expect(screen.getByText('WORKFLOW_STEP_EXCEPTION')).toBeInTheDocument()
-    expect(screen.getByText('Success')).toBeInTheDocument()
+    expect(within(secondBodyRow).getByText('Success')).toBeInTheDocument()
     expect(screen.getByText('n=128')).toBeInTheDocument()
     expect(screen.getByText('64x64 * 64x64')).toBeInTheDocument()
   })
@@ -177,5 +177,79 @@ describe('RunHistoryView', () => {
 
     expect(within(firstBodyRow).getByText('run-fast')).toBeInTheDocument()
     expect(within(secondBodyRow).getByText('run-slow')).toBeInTheDocument()
+  })
+
+  it('filters rows by operation', () => {
+    mockUseGetRunHistoryQuery.mockReturnValue(mockQueryResult([
+      makeRun({
+        runId: 'run-vector',
+        createdAt: '2026-05-01T01:00:00.000Z',
+        benchmark: 'vector',
+        params: { vectorLength: 128 },
+      }),
+      makeRun({
+        runId: 'run-conv',
+        createdAt: '2026-05-01T02:00:00.000Z',
+        benchmark: 'convolution',
+        params: {
+          inputN: 1,
+          inputC: 3,
+          inputH: 64,
+          inputW: 64,
+          filterOutC: 16,
+          filterH: 3,
+          filterW: 3,
+          strideH: 1,
+          strideW: 1,
+          padH: 1,
+          padW: 1,
+        },
+      }),
+    ]))
+
+    render(<RunHistoryView />)
+
+    fireEvent.change(screen.getByLabelText(/operation/i), { target: { value: 'convolution' } })
+
+    expect(screen.getByText('run-conv')).toBeInTheDocument()
+    expect(screen.queryByText('run-vector')).not.toBeInTheDocument()
+  })
+
+  it('filters rows by result', () => {
+    mockUseGetRunHistoryQuery.mockReturnValue(mockQueryResult([
+      makeRun({
+        runId: 'run-success',
+        createdAt: '2026-05-01T01:00:00.000Z',
+        status: 'COMPLETED',
+      }),
+      makeRun({
+        runId: 'run-failed',
+        createdAt: '2026-05-01T02:00:00.000Z',
+        status: 'FAILED',
+      }),
+    ]))
+
+    render(<RunHistoryView />)
+
+    fireEvent.change(screen.getByLabelText(/result/i), { target: { value: 'failed' } })
+
+    expect(screen.getByText('run-failed')).toBeInTheDocument()
+    expect(screen.queryByText('run-success')).not.toBeInTheDocument()
+  })
+
+  it('shows an empty filtered state when filters match no runs', () => {
+    mockUseGetRunHistoryQuery.mockReturnValue(mockQueryResult([
+      makeRun({
+        runId: 'run-success',
+        createdAt: '2026-05-01T01:00:00.000Z',
+        status: 'COMPLETED',
+      }),
+    ]))
+
+    render(<RunHistoryView />)
+
+    fireEvent.change(screen.getByLabelText(/result/i), { target: { value: 'failed' } })
+
+    expect(screen.getByText('No runs match the selected filters.')).toBeInTheDocument()
   })
 })

@@ -6,13 +6,35 @@ import { type RunHistoryRow, useGetRunHistoryQuery, useStartRunMutation } from '
 
 type SortKey = 'runId' | 'createdAt' | 'runner' | 'operation' | 'parameters' | 'result' | 'duration'
 type SortDirection = 'asc' | 'desc'
+type OperationFilter = 'all' | RunHistoryRow['benchmark']
+type ResultFilter = 'all' | 'success' | 'failed' | 'cancelled'
+
+const OPERATION_OPTIONS: Array<{ value: OperationFilter; label: string }> = [
+  { value: 'all', label: 'All operations' },
+  { value: 'vector', label: 'Vector' },
+  { value: 'matrix-multiplication', label: 'Matrix Multiplication' },
+  { value: 'convolution', label: 'Convolution' },
+]
+
+const RESULT_OPTIONS: Array<{ value: ResultFilter; label: string }> = [
+  { value: 'all', label: 'All results' },
+  { value: 'success', label: 'Success' },
+  { value: 'failed', label: 'Failed' },
+  { value: 'cancelled', label: 'Cancelled' },
+]
 
 function formatParams(run: RunHistoryRow) {
   return formatBenchmarkParams(run.benchmark, run.params)
 }
 
 function resultLabel(status: RunHistoryRow['status']) {
-  return status === 'COMPLETED' ? 'Success' : 'Failed'
+  if (status === 'COMPLETED') {
+    return 'Success'
+  }
+  if (status === 'CANCELLED') {
+    return 'Cancelled'
+  }
+  return 'Failed'
 }
 
 function resultReason(row: RunHistoryRow) {
@@ -73,11 +95,28 @@ export default function RunHistoryView() {
   const retryRun = useStartRunMutation()
   const [sortKey, setSortKey] = useState<SortKey>('createdAt')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [operationFilter, setOperationFilter] = useState<OperationFilter>('all')
+  const [resultFilter, setResultFilter] = useState<ResultFilter>('all')
   const [copiedRunId, setCopiedRunId] = useState<string | null>(null)
   const [retryingRunId, setRetryingRunId] = useState<string | null>(null)
 
+  const allRows = runHistory.data?.items ?? []
   const rows = useMemo(() => {
-    const items = [...(runHistory.data?.items ?? [])]
+    const items = allRows.filter((item) => {
+      if (operationFilter !== 'all' && item.benchmark !== operationFilter) {
+        return false
+      }
+      if (resultFilter === 'success') {
+        return item.status === 'COMPLETED'
+      }
+      if (resultFilter === 'failed') {
+        return item.status === 'FAILED'
+      }
+      if (resultFilter === 'cancelled') {
+        return item.status === 'CANCELLED'
+      }
+      return true
+    })
     items.sort((left, right) => {
       if (sortKey === 'runId') {
         return compareValues(left.runId, right.runId, sortDirection)
@@ -100,7 +139,7 @@ export default function RunHistoryView() {
       return compareValues(totalOperationDuration(left), totalOperationDuration(right), sortDirection)
     })
     return items
-  }, [runHistory.data?.items, sortDirection, sortKey])
+  }, [allRows, operationFilter, resultFilter, sortDirection, sortKey])
 
   const setSort = (key: SortKey) => {
     setSortDirection((direction) => (
@@ -141,19 +180,57 @@ export default function RunHistoryView() {
 
   return (
     <GlowCard>
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Run History</h3>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
-          Sortable history of completed and failed runs across runners.
-        </p>
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Run History</h3>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+            Sortable history of completed and failed runs across runners.
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-end">
+          <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            Operation
+            <span className="relative mt-1 block min-w-44">
+              <select
+                value={operationFilter}
+                onChange={(event) => setOperationFilter(event.target.value as OperationFilter)}
+                className="block w-full appearance-none rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-9 text-sm normal-case tracking-normal text-zinc-900 shadow-sm outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-100"
+              >
+                {OPERATION_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500 dark:text-zinc-400" />
+            </span>
+          </label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            Result
+            <span className="relative mt-1 block min-w-36">
+              <select
+                value={resultFilter}
+                onChange={(event) => setResultFilter(event.target.value as ResultFilter)}
+                className="block w-full appearance-none rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-9 text-sm normal-case tracking-normal text-zinc-900 shadow-sm outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-100"
+              >
+                {RESULT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500 dark:text-zinc-400" />
+            </span>
+          </label>
+        </div>
       </div>
       {runHistory.isPending ? (
         <div className="flex h-72 items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">
           <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading run history
         </div>
-      ) : rows.length === 0 ? (
+      ) : allRows.length === 0 ? (
         <div className="flex h-72 items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">
           No completed or failed runs yet.
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="flex h-72 items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">
+          No runs match the selected filters.
         </div>
       ) : (
         <div className="overflow-x-auto">
