@@ -114,6 +114,42 @@ SOURCE_CACHE_SRC_DIR="${SOURCE_CACHE_DIR}/src"
 SOURCE_CACHE_BUILD_DIR="${SOURCE_CACHE_DIR}/build"
 PREBUILT_BIN="${BUNDLE_DIR}/prebuilt/${RUNNER}/compute"
 
+ensure_build_tools() {
+  local has_cxx=0
+  local has_make=0
+
+  if command -v c++ >/dev/null 2>&1 || command -v g++ >/dev/null 2>&1; then
+    has_cxx=1
+  fi
+  if command -v make >/dev/null 2>&1; then
+    has_make=1
+  fi
+
+  if [[ "${has_cxx}" -eq 1 && "${has_make}" -eq 1 ]]; then
+    return 0
+  fi
+
+  echo "C++ build tools are missing; installing compiler and make."
+  if command -v dnf >/dev/null 2>&1; then
+    dnf install -y gcc gcc-c++ make
+  elif command -v apt-get >/dev/null 2>&1; then
+    DEBIAN_FRONTEND=noninteractive apt-get update -y
+    DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential make
+  else
+    echo "No supported package manager found (expected dnf or apt-get)." >&2
+    exit 2
+  fi
+
+  if ! command -v c++ >/dev/null 2>&1 && ! command -v g++ >/dev/null 2>&1; then
+    echo "C++ compiler is still unavailable after build tools installation." >&2
+    exit 2
+  fi
+  if ! command -v make >/dev/null 2>&1; then
+    echo "make is still unavailable after build tools installation." >&2
+    exit 2
+  fi
+}
+
 ensure_cmake() {
   cmake_meets_minimum() {
     local current
@@ -237,6 +273,7 @@ ensure_cuda_toolkit_for_gpu() {
   exit 2
 }
 
+ensure_build_tools
 ensure_cmake
 ensure_cuda_toolkit_for_gpu
 
